@@ -181,7 +181,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <button class="btn red" id="btnSaveClient">Save client ID</button>
     </div>
     <p class="err" id="setupErr" hidden></p>
-    <p class="note">The client ID is saved in this browser only. To set it for everyone, paste it into <code>CONFIG.CLIENT_ID</code> at the top of the script in this file.</p>
+    <p class="note">The client ID is saved in this browser only. To set it for everyone, add it in Netlify as <code>window.DASHBOARD_CLIENT_ID</code> through snippet injection.</p>
   </section>
 
   <!-- Sign in -->
@@ -326,7 +326,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
    everyone who opens the dashboard.
    ===================================================================== */
 const CONFIG = {
-  CLIENT_ID: '',
+  CLIENT_ID: window.DASHBOARD_CLIENT_ID || '',   // set via Netlify snippet injection
   SCOPE: 'https://www.googleapis.com/auth/analytics.readonly',
   CONCURRENCY: 4
 };
@@ -386,7 +386,7 @@ function getRanges(){
 
 /* ---------- State ---------- */
 const state = {
-  clientId: CONFIG.CLIENT_ID || LS.get('clientId', ''),
+  clientId: CONFIG.CLIENT_ID || LS.get('clientId', ''),  // injected ID takes priority
   token: null, tokenExp: 0,
   properties: [],
   selected: LS.get('selected', null),
