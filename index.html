@@ -495,6 +495,7 @@ const derive = (t) => t && ({ ...t,
 /* ---------- Main load ---------- */
 let loadSeq = 0;
 async function load(){
+  if (!state.propertiesLoaded){ enterDashboard(); return; }
   const seq = ++loadSeq;
   const R = getRanges();
   renderPeriod(R);
@@ -873,7 +874,8 @@ async function enterDashboard(){
     return;
   }
   setStatus('');
-  const firstRun = state.selected == null;
+  state.propertiesLoaded = true;
+  const firstRun = state.selected == null || !state.selected.length;
   const known = new Set(state.properties.map(p => p.id));
   state.selected = firstRun ? state.properties.map(p => p.id) : state.selected.filter(id => known.has(id));
   LS.set('selected', state.selected);
