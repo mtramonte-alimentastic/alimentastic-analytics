@@ -185,9 +185,27 @@ export default async (req) => {
       const m = id.match(/\/d\/([a-zA-Z0-9_-]+)/); if (m) id = m[1];
       if (!id) throw fail('The social data sheet is not connected yet. Add SOCIAL_SHEET_ID (the Google Sheet link or ID) in Netlify under Site configuration → Environment variables, then redeploy.');
       const tab = (process.env.SOCIAL_SHEET_TAB || '').trim();
-      const range = tab ? `'${tab.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
-      const j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
-      return json(200, parseSocial(j.values || []));
+      const fTab = (process.env.SOCIAL_FOLLOWERS_TAB || '').trim();
+      const rng = (name) => name ? `'${name.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
+      const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : []);
+      const qs = ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+      let j;
+      try {
+        j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
+      } catch (e) {
+        if (fTab && /Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${fTab}". Check SOCIAL_FOLLOWERS_TAB in Netlify (it must match the tab name exactly).`, 400);
+        if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check SOCIAL_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400);
+        throw e;
+      }
+      const [main, fol] = (j.valueRanges || []).map(v => v.values || []);
+      const out = parseSocial(main || []);
+      if (fol && fol.length) {
+        // Follower snapshots: only rows with a follower count, added without touching reach/impressions.
+        parseSocial(fol).rows.filter(r => r.followers != null)
+          .forEach(r => out.rows.push({ ...r, reach: null, impressions: null, engagements: null, newFollowers: null, snapshot: true }));
+        out.rows.sort((a, b) => a.date.localeCompare(b.date));
+      }
+      return json(200, out);
     }
     if (action === 'gsc_sites') {
       return json(200, await google('https://www.googleapis.com/webmasters/v3/sites'));

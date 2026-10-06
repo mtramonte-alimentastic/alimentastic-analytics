@@ -1016,8 +1016,9 @@ function renderSocial(R){
   const cur = socSum(curRows), prev = pi ? socSum(prevRows) : null;
 
   const accounts = [...new Set(all.map(r => r.platform + '|' + r.account))];
-  const fCur = socFollowers(all, ci[1]);
-  const fPrev = pi ? socFollowers(all, pi[1]) : null;
+  // A snapshot taken the morning after a period ends counts as that period's closing follower count.
+  const fCur = socFollowers(all, iso(addDays(R.cur.end, 1)));
+  const fPrev = pi ? socFollowers(all, iso(addDays(R.prev.end, 1))) : null;
   const followersNow = [...fCur.values()].reduce((s, r) => s + r.followers, 0);
   const followersPrevComplete = fPrev && [...fCur.keys()].every(k => fPrev.has(k));
   const followersPrev = followersPrevComplete ? [...fCur.keys()].reduce((s, k) => s + fPrev.get(k).followers, 0) : null;
