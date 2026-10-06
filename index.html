@@ -157,8 +157,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </header>
 
 <nav class="tabs" aria-label="Data sources">
-  <button class="tab active" aria-current="page">Web analytics</button>
-  <button class="tab" disabled>Search Console<small>coming next</small></button>
+  <button class="tab active" data-tab="ga" aria-current="page">Web analytics</button>
+  <button class="tab" data-tab="gsc">Search Console</button>
   <button class="tab" disabled>Social<small>coming next</small></button>
   <button class="tab" disabled>Newsletter<small>coming next</small></button>
 </nav>
@@ -179,8 +179,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <!-- Dashboard -->
   <section id="screenDash" hidden>
     <div class="controls">
-      <label class="ctl"><span>View</span><select id="selView"></select></label>
-      <div class="ctl"><span>Sites</span><button class="btn ghost" id="btnSites">Choose sites</button></div>
+      <label class="ctl" id="ctlView"><span>View</span><select id="selView"></select></label>
+      <div class="ctl" id="ctlSites"><span>Sites</span><button class="btn ghost" id="btnSites">Choose sites</button></div>
+      <label class="ctl" id="ctlGscView" hidden><span>View</span><select id="selGscView"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
           <button data-days="7">7 days</button>
@@ -284,6 +285,63 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       </div>
       <p class="footnote" id="detailNote" hidden>Pick a single site under View to see pages, landing pages, sources and key events.</p>
     </div>
+
+    <!-- ===== Search Console ===== -->
+    <div id="gscContent" hidden>
+      <div class="kpis" id="gKpis"></div>
+      <p class="footnote">Search Console data is about 2–3 days behind, so periods end 3 days ago. Position: ▲ means the average ranking improved.</p>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Trend</h2>
+          <span class="sub" id="gTrendSub"></span>
+          <div class="tools">
+            <div class="seg small" id="gSegMetric">
+              <button data-m="clicks">Clicks</button>
+              <button data-m="impressions">Impressions</button>
+              <button data-m="ctr">CTR</button>
+              <button data-m="position">Position</button>
+            </div>
+          </div>
+        </div>
+        <div class="chartbox"><canvas id="gTrendChart" aria-label="Search trend chart"></canvas></div>
+      </section>
+
+      <section class="panel" id="gPanelSites">
+        <div class="ph">
+          <h2 class="bar">Sites</h2>
+          <span class="sub">Select a row to open that site</span>
+          <div class="tools"><button class="mini" data-csv="gSites">Download CSV</button></div>
+        </div>
+        <div class="tw" id="gTblSites"></div>
+      </section>
+
+      <div id="gDetail">
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Top queries</h2><span class="sub">By clicks</span>
+            <div class="tools"><button class="mini" data-csv="gQueries">Download CSV</button></div></div>
+          <div class="tw" id="gTblQueries"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Top pages</h2><span class="sub">By clicks</span>
+            <div class="tools"><button class="mini" data-csv="gPages">Download CSV</button></div></div>
+          <div class="tw" id="gTblPages"></div>
+        </section>
+      </div>
+
+      <div class="grid2">
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Countries</h2><span class="sub">Clicks, top 10</span>
+            <div class="tools"><button class="mini" data-csv="gCountries">Download CSV</button></div></div>
+          <div id="gLstCountries"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Devices</h2><span class="sub">Clicks</span></div>
+          <div id="gLstDevices"></div>
+        </section>
+      </div>
+      <p class="footnote" id="gDetailNote" hidden>Pick a single site under View to see top queries and pages.</p>
+    </div>
   </section>
 </main>
 
@@ -356,9 +414,9 @@ const today = () => { const t = new Date(); return new Date(t.getFullYear(), t.g
 const daysBetween = (a, b) => Math.round((b - a) / 864e5) + 1;
 const dateList = (r) => { const out = []; for (let d = new Date(r.start); d <= r.end; d = addDays(d, 1)) out.push(iso(d).replace(/-/g,'')); return out; };
 
-function getRanges(){
+function getRanges(lag = 1){
   let start, end;
-  if (state.range.days){ end = addDays(today(), -1); start = addDays(end, -(state.range.days - 1)); }
+  if (state.range.days){ end = addDays(today(), -lag); start = addDays(end, -(state.range.days - 1)); }
   else { start = parseISO(state.range.from); end = parseISO(state.range.to); }
   const days = daysBetween(start, end);
   let prev = null;
@@ -375,6 +433,10 @@ const state = {
   view: LS.get('view', 'portfolio'),
   range: LS.get('range', {days: 28}),
   compare: LS.get('compare', 'prev'),
+  tab: LS.get('tab', 'ga'),
+  gscView: LS.get('gscView', 'portfolio'),
+  gscSites: null,
+  gMetric: 'clicks',
   metric: 'activeUsers',
   cache: new Map(),
   chart: null,
@@ -494,7 +556,23 @@ const derive = (t) => t && ({ ...t,
 
 /* ---------- Main load ---------- */
 let loadSeq = 0;
-async function load(){
+function load(){
+  syncTabUI();
+  return state.tab === 'gsc' ? loadGsc() : loadGa();
+}
+
+function syncTabUI(){
+  const gsc = state.tab === 'gsc';
+  document.querySelectorAll('.tab[data-tab]').forEach(b => {
+    const on = b.dataset.tab === state.tab;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  $('ctlView').hidden = gsc; $('ctlSites').hidden = gsc; $('ctlGscView').hidden = !gsc;
+  if (gsc) $('content').hidden = true; else $('gscContent').hidden = true;
+}
+
+async function loadGa(){
   if (!state.propertiesLoaded){ enterDashboard(); return; }
   const seq = ++loadSeq;
   const R = getRanges();
@@ -546,6 +624,253 @@ function handleAuthLost(e){
   $('signinErr').hidden = !(e && e.message);
   $('btnSignOut').hidden = true;
   setTimeout(() => $('inpKey').focus(), 50);
+}
+
+/* =====================================================================
+   SEARCH CONSOLE
+   ===================================================================== */
+const ISO3 = {aut:'AT',deu:'DE',che:'CH',ita:'IT',fra:'FR',nld:'NL',bel:'BE',lux:'LU',gbr:'GB',irl:'IE',esp:'ES',prt:'PT',pol:'PL',cze:'CZ',svk:'SK',hun:'HU',svn:'SI',hrv:'HR',srb:'RS',bih:'BA',rou:'RO',bgr:'BG',grc:'GR',tur:'TR',dnk:'DK',swe:'SE',nor:'NO',fin:'FI',est:'EE',lva:'LV',ltu:'LT',ukr:'UA',rus:'RU',usa:'US',can:'CA',mex:'MX',bra:'BR',arg:'AR',aus:'AU',nzl:'NZ',ind:'IN',chn:'CN',jpn:'JP',kor:'KR',sgp:'SG',are:'AE',sau:'SA',qat:'QA',kwt:'KW',isr:'IL',egy:'EG',zaf:'ZA',nga:'NG',mar:'MA',tha:'TH',vnm:'VN',phl:'PH',idn:'ID',mys:'MY',pak:'PK',bgd:'BD',lie:'LI',mlt:'MT',cyp:'CY',isl:'IS',alb:'AL',mkd:'MK',mne:'ME',blr:'BY',mda:'MD',geo:'GE',arm:'AM',aze:'AZ',kaz:'KZ',hkg:'HK',twn:'TW',col:'CO',chl:'CL',per:'PE'};
+let regionNames = null;
+try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch(e){}
+const countryName = (c) => { const two = ISO3[(c || '').toLowerCase()]; try { return two && regionNames ? regionNames.of(two) : (c || '').toUpperCase(); } catch(e){ return (c || '').toUpperCase(); } };
+const gscLabel = (u) => u.startsWith('sc-domain:') ? u.slice(10) + ' (domain)' : u.replace(/^https?:\/\//, '').replace(/\/$/, '');
+const pathOf = (u) => { try { const x = new URL(u); return (x.pathname + x.search) || '/'; } catch(e){ return u; } };
+
+function gscFriendly(e){
+  if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(e.message))
+    return new Error('The saved Google sign-in does not include Search Console yet. Redo the OAuth Playground step with both scopes and replace GA_REFRESH_TOKEN in Netlify.');
+  if (/has not been used in project|is disabled/i.test(e.message))
+    return new Error('The Google Search Console API is not enabled in your Google Cloud project yet. ' + e.message);
+  return e;
+}
+
+async function loadGscSites(){
+  const j = await api('gsc_sites');
+  const all = (j.siteEntry || []).filter(s => s.permissionLevel !== 'siteUnverifiedUser')
+    .map(s => ({ url: s.siteUrl, name: gscLabel(s.siteUrl) })).sort((a, b) => a.name.localeCompare(b.name));
+  // Portfolio: skip URL-prefix properties already covered by a domain property, to avoid double counting.
+  const domains = all.filter(s => s.url.startsWith('sc-domain:')).map(s => s.url.slice(10));
+  all.forEach(s => {
+    if (s.url.startsWith('sc-domain:')) return;
+    let host = ''; try { host = new URL(s.url).hostname; } catch(e){}
+    s.covered = domains.some(d => host === d || host.endsWith('.' + d));
+  });
+  return all;
+}
+
+function gq(R, part, extra){
+  const r = R[part];
+  return { startDate: iso(r.start), endDate: iso(r.end), type: 'web', ...(extra || {}) };
+}
+
+async function fetchGscCore(site, R){
+  const key = `gcore|${site.url}|${iso(R.cur.start)}|${iso(R.cur.end)}|${R.prev ? iso(R.prev.start)+'|'+iso(R.prev.end) : '-'}`;
+  if (state.cache.has(key)) return state.cache.get(key);
+  const queries = [
+    gq(R, 'cur'),
+    gq(R, 'cur', { dimensions: ['date'], rowLimit: 1000 }),
+    gq(R, 'cur', { dimensions: ['country'], rowLimit: 30 }),
+    gq(R, 'cur', { dimensions: ['device'], rowLimit: 5 })
+  ];
+  if (R.prev) queries.push(gq(R, 'prev'), gq(R, 'prev', { dimensions: ['date'], rowLimit: 1000 }));
+  const j = await api('gsc_batch', null, { site: site.url, queries });
+  const [tot, daily, countries, devices, ptot, pdaily] = j.results.map(x => x.rows || []);
+  const sum = (rows) => { const t = rows[0] || {}; return { clicks: t.clicks || 0, impressions: t.impressions || 0, posW: (t.position || 0) * (t.impressions || 0) }; };
+  const dmap = (rows) => { const m = new Map(); (rows || []).forEach(r => m.set(r.keys[0].replace(/-/g, ''), { clicks: r.clicks, impressions: r.impressions, posW: r.position * r.impressions })); return m; };
+  const res = {
+    site,
+    totals: { cur: sum(tot), prev: R.prev ? sum(ptot) : null },
+    daily: { cur: dmap(daily), prev: R.prev ? dmap(pdaily) : null },
+    countries: countries.map(r => ({ country: countryName(r.keys[0]), clicks: r.clicks, impressions: r.impressions })),
+    devices: devices.map(r => ({ device: r.keys[0].charAt(0) + r.keys[0].slice(1).toLowerCase(), clicks: r.clicks }))
+  };
+  state.cache.set(key, res);
+  return res;
+}
+
+async function fetchGscDetail(site, R){
+  const key = `gdetail|${site.url}|${iso(R.cur.start)}|${iso(R.cur.end)}`;
+  if (state.cache.has(key)) return state.cache.get(key);
+  const j = await api('gsc_batch', null, { site: site.url, queries: [
+    gq(R, 'cur', { dimensions: ['query'], rowLimit: 25 }),
+    gq(R, 'cur', { dimensions: ['page'], rowLimit: 25 })
+  ]});
+  const map = (rows, dim) => (rows || []).map(r => ({ [dim]: dim === 'page' ? pathOf(r.keys[0]) : r.keys[0], clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position }));
+  const res = { queries: map(j.results[0].rows, 'query'), pages: map(j.results[1].rows, 'page') };
+  state.cache.set(key, res);
+  return res;
+}
+
+const gDerive = (t) => t && ({ ...t, ctr: t.impressions ? t.clicks / t.impressions : 0, position: t.impressions ? t.posW / t.impressions : 0 });
+function posDelta(cur, prev){
+  if (prev == null || !prev || !cur) return prev == null ? null : { cls: 'flat', txt: '–' };
+  const d = prev - cur;
+  if (Math.abs(d) < 0.05) return { cls: 'flat', txt: '±0.0' };
+  return { cls: d > 0 ? 'up' : 'down', txt: `${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}` };
+}
+const fPos = (v) => v ? v.toFixed(1) : '–';
+
+async function loadGsc(){
+  const seq = ++loadSeq;
+  const R = getRanges(3);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('gscContent').classList.add('dim');
+  try {
+    if (!state.gscSites){
+      setStatus('Loading your Search Console sites…');
+      state.gscSites = await loadGscSites();
+      buildGscSelect();
+    }
+    if (seq !== loadSeq) return;
+    if (!state.gscSites.length){
+      $('gscContent').hidden = true;
+      showAlert('No Search Console properties found for the saved Google account. Make sure it has access to your sites in Search Console.');
+      return;
+    }
+    $('gscContent').hidden = false;
+    const single = state.gscView !== 'portfolio' ? state.gscSites.find(s => s.url === state.gscView) : null;
+    const targets = single ? [single] : state.gscSites.filter(s => !s.covered);
+    setStatus(single ? `Loading ${single.name}…` : `Loading ${targets.length} sites…`);
+    const results = await pool(targets, CONFIG.CONCURRENCY, s => fetchGscCore(s, R),
+      done => { if (seq === loadSeq && !single) setStatus(`Loading sites… ${done} of ${targets.length}`); });
+    if (seq !== loadSeq) return;
+    const authFail = results.find(r => !r.ok && r.e instanceof AuthError);
+    if (authFail) throw authFail.e;
+    const ok = results.filter(r => r.ok).map(r => r.v);
+    const failed = results.map((r, i) => r.ok ? null : { name: targets[i].name, msg: gscFriendly(r.e).message }).filter(Boolean);
+    let detail = null;
+    if (single && ok.length){
+      try { detail = await fetchGscDetail(single, R); }
+      catch(e){ if (e instanceof AuthError) throw e; failed.push({ name: single.name + ' (queries and pages)', msg: gscFriendly(e).message }); }
+    }
+    if (seq !== loadSeq) return;
+    renderGsc(ok, R, single, detail);
+    if (failed.length) showAlert(`Some data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
+    $('gscContent').hidden = true;
+    showAlert(esc(gscFriendly(e).message));
+  } finally {
+    if (seq === loadSeq){ setStatus(''); $('gscContent').classList.remove('dim'); }
+  }
+}
+
+function buildGscSelect(){
+  const s = state.gscSites || [];
+  if (state.gscView !== 'portfolio' && !s.some(x => x.url === state.gscView)) state.gscView = 'portfolio';
+  $('selGscView').innerHTML = `<option value="portfolio">All sites (${s.filter(x => !x.covered).length})</option>` +
+    s.map(x => `<option value="${esc(x.url)}">${esc(x.name)}</option>`).join('');
+  $('selGscView').value = state.gscView;
+}
+
+const G_KPIS = [
+  { k: 'clicks', label: 'Clicks', f: fNum },
+  { k: 'impressions', label: 'Impressions', f: fNum },
+  { k: 'ctr', label: 'Click-through rate', f: fPct, rate: true },
+  { k: 'position', label: 'Average position', f: fPos, pos: true }
+];
+
+function renderGsc(results, R, single, detail){
+  const add = (a, b) => ({ clicks: a.clicks + b.clicks, impressions: a.impressions + b.impressions, posW: a.posW + b.posW });
+  const zero = { clicks: 0, impressions: 0, posW: 0 };
+  const cur = gDerive(results.reduce((a, r) => add(a, r.totals.cur), zero));
+  const prev = R.prev ? gDerive(results.reduce((a, r) => add(a, r.totals.prev), zero)) : null;
+  $('gKpis').innerHTML = G_KPIS.map(x => {
+    const d = prev ? (x.pos ? posDelta(cur[x.k], prev[x.k]) : delta(cur[x.k] || 0, prev[x.k] || 0, x.rate)) : null;
+    return `<div class="kpi"><div class="lbl">${x.label}</div><div class="val">${x.f(cur[x.k])}</div>${d ? `<div class="d ${d.cls}">${d.txt}</div>` : ''}</div>`;
+  }).join('');
+
+  state.lastGsc = { results, R };
+  renderGscTrend();
+
+  $('gPanelSites').hidden = !!single;
+  if (!single){
+    const rows = results.map(r => {
+      const c = gDerive(r.totals.cur), p = gDerive(r.totals.prev);
+      return { url: r.site.url, name: r.site.name, clicks: c.clicks, dClicks: p ? delta(c.clicks, p.clicks) : null,
+        impressions: c.impressions, dImpr: p ? delta(c.impressions, p.impressions) : null, ctr: c.ctr, position: c.position,
+        dPos: p ? posDelta(c.position, p.position) : null };
+    }).sort((a, b) => b.clicks - a.clicks);
+    const total = rows.reduce((s, r) => s + r.clicks, 0) || 1;
+    const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
+    $('gTblSites').innerHTML = `<table><thead><tr><th>Site</th><th class="n">Clicks</th><th>Share of clicks</th><th class="n">Impressions</th><th class="n">CTR</th><th class="n">Avg. position</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="click" data-url="${esc(r.url)}" tabindex="0"><td><b>${esc(r.name)}</b></td>
+      <td class="n">${fNum(r.clicks)}${dl(r.dClicks)}</td>
+      <td><div class="share"><i style="width:${(r.clicks/total*100).toFixed(1)}%"></i><span>${(r.clicks/total*100).toFixed(1)}%</span></div></td>
+      <td class="n">${fNum(r.impressions)}${dl(r.dImpr)}</td><td class="n">${fPct(r.ctr)}</td>
+      <td class="n">${fPos(r.position)}${dl(r.dPos)}</td></tr>`).join('')}</tbody></table>`;
+    state.csv.gSites = { name: 'search-sites', cols: ['name','clicks','impressions','ctr','position'], rows };
+  }
+
+  const countries = sumByKey(results.map(r => r.countries), 'country', ['clicks','impressions']).sort((a, b) => b.clicks - a.clicks).slice(0, 10);
+  renderBars('gLstCountries', countries, 'country', 'clicks');
+  state.csv.gCountries = { name: 'search-countries', cols: ['country','clicks','impressions'], rows: countries };
+  const devices = sumByKey(results.map(r => r.devices), 'device', ['clicks']).sort((a, b) => b.clicks - a.clicks);
+  renderBars('gLstDevices', devices, 'device', 'clicks');
+
+  $('gDetail').hidden = !single;
+  $('gDetailNote').hidden = !!single;
+  if (single && detail){
+    const cols = (first, label) => [{ k: first, label }, { k: 'clicks', label: 'Clicks', n: 1, f: fNum }, { k: 'impressions', label: 'Impressions', n: 1, f: fNum },
+      { k: 'ctr', label: 'CTR', n: 1, f: fPct }, { k: 'position', label: 'Avg. position', n: 1, f: fPos }];
+    table('gTblQueries', cols('query', 'Query'), detail.queries, 'gQueries');
+    table('gTblPages', cols('page', 'Page'), detail.pages, 'gPages');
+  }
+}
+
+function renderGscTrend(){
+  const { results, R } = state.lastGsc || {};
+  if (!results) return;
+  const m = state.gMetric;
+  document.querySelectorAll('#gSegMetric button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  const curDates = dateList(R.cur), prevDates = R.prev ? dateList(R.prev) : [];
+  const agg = (dates, part) => dates.map(d => {
+    if (d == null) return null;
+    return results.reduce((a, r) => { const x = r.daily[part]?.get(d); return x ? { clicks: a.clicks + x.clicks, impressions: a.impressions + x.impressions, posW: a.posW + x.posW } : a; }, { clicks: 0, impressions: 0, posW: 0 });
+  });
+  const cA = agg(curDates, 'cur'), pA = R.prev ? agg(curDates.map((_, i) => prevDates[i] ?? null), 'prev') : [];
+  const toDate = (s) => new Date(+s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8));
+  const weekly = R.days > 120;
+  const bucket = (arr) => {
+    if (!weekly) return arr;
+    const out = [];
+    for (let i = 0; i < arr.length; i += 7){
+      const sl = arr.slice(i, i + 7).filter(Boolean);
+      out.push(sl.length ? sl.reduce((a, x) => ({ clicks: a.clicks + x.clicks, impressions: a.impressions + x.impressions, posW: a.posW + x.posW }), { clicks: 0, impressions: 0, posW: 0 }) : null);
+    }
+    return out;
+  };
+  const val = (x) => !x ? null : m === 'ctr' ? (x.impressions ? x.clicks / x.impressions * 100 : null) : m === 'position' ? (x.impressions ? x.posW / x.impressions : null) : x[m];
+  const cv = bucket(cA).map(val), pv = R.prev ? bucket(pA).map(val) : [];
+  const step = weekly ? 7 : 1;
+  const idx = curDates.map((_, i) => i).filter(i => i % step === 0);
+  const labels = idx.map(i => fDate(toDate(curDates[i])));
+  const tips = idx.map(i => weekly ? `Week from ${fDate(toDate(curDates[i]), true)}` : fDate(toDate(curDates[i]), true) + (prevDates[i] ? ` vs ${fDate(toDate(prevDates[i]), true)}` : ''));
+  $('gTrendSub').textContent = weekly ? 'Weekly' : 'Daily';
+  const fmt = (v) => v == null ? '–' : m === 'ctr' ? v.toFixed(1) + '%' : m === 'position' ? v.toFixed(1) : fNum(v);
+
+  const ds = [{ label: 'This period', data: cv, borderColor: '#D6001C', backgroundColor: 'rgba(214,0,28,.08)', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: .25, fill: m !== 'position', spanGaps: true }];
+  if (R.prev) ds.push({ label: state.compare === 'yoy' ? 'Last year' : 'Previous period', data: pv, borderColor: '#000', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 3, tension: .25, fill: false, spanGaps: true });
+  if (state.gChart) state.gChart.destroy();
+  if (!window.Chart) return;
+  state.gChart = new Chart($('gTrendChart'), {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 18, boxHeight: 2, color: '#000' } },
+        tooltip: { backgroundColor: '#000', titleFont: { weight: 700 }, padding: 10, cornerRadius: 0,
+          callbacks: { title: (it) => tips[it[0].dataIndex], label: (c) => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 18 }, border: { color: '#000' } },
+        y: { reverse: m === 'position', beginAtZero: m !== 'position', grid: { color: '#ececec' }, border: { display: false },
+             title: { display: m === 'position', text: 'Higher on chart = better ranking', color: '#666' },
+             ticks: { callback: (v) => m === 'ctr' ? v + '%' : NF.format(v) } }
+      }
+    }
+  });
 }
 
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
@@ -826,8 +1151,19 @@ function bindUI(){
     state.range = { from: f, to: t }; LS.set('range', state.range); load();
   };
   $('selCompare').onchange = () => { state.compare = $('selCompare').value; LS.set('compare', state.compare); load(); };
-  $('btnRefresh').onclick = () => { state.cache.clear(); load(); };
+  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; load(); };
 
+  document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => {
+    if (state.tab === b.dataset.tab) return;
+    state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
+  });
+  $('selGscView').onchange = () => { state.gscView = $('selGscView').value; LS.set('gscView', state.gscView); load(); };
+  $('gSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.gMetric = b.dataset.m; renderGscTrend(); };
+  $('gTblSites').onclick = (e) => {
+    const tr = e.target.closest('tr[data-url]');
+    if (tr){ state.gscView = tr.dataset.url; LS.set('gscView', state.gscView); $('selGscView').value = state.gscView; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  };
+  $('gTblSites').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-url]')) e.target.click(); };
   $('segMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.metric = b.dataset.m; renderTrend(); };
 
   $('tblSites').onclick = (e) => {

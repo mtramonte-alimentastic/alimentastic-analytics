@@ -1,5 +1,5 @@
-// Netlify function: reads Google Analytics 4 with a service account, so
-// dashboard viewers need no Google login or GA access.
+// Netlify function: reads Google Analytics 4 and Search Console on behalf of
+// the dashboard, so viewers need no Google login or GA access.
 //
 // Environment variables (Netlify → Site configuration → Environment variables):
 //   Either a saved Google sign-in:
@@ -11,7 +11,7 @@
 
 import crypto from 'node:crypto';
 
-const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
+const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly';
 let cached = { token: null, exp: 0 };
 
 const json = (status, body) => new Response(JSON.stringify(body), {
@@ -114,6 +114,20 @@ export default async (req) => {
       const body = await req.json().catch(() => null);
       if (!body || !Array.isArray(body.requests) || body.requests.length < 1 || body.requests.length > 5) return json(400, { error: 'Invalid report request.' });
       return json(200, await google(`https://analyticsdata.googleapis.com/v1beta/properties/${property}:batchRunReports`, { requests: body.requests }));
+    }
+    if (action === 'gsc_sites') {
+      return json(200, await google('https://www.googleapis.com/webmasters/v3/sites'));
+    }
+    if (action === 'gsc_batch' && req.method === 'POST') {
+      const body = await req.json().catch(() => null);
+      const site = body && typeof body.site === 'string' ? body.site : '';
+      if (!/^(sc-domain:|https?:\/\/)/.test(site)) return json(400, { error: 'Invalid Search Console site.' });
+      if (!Array.isArray(body.queries) || body.queries.length < 1 || body.queries.length > 8) return json(400, { error: 'Invalid Search Console request.' });
+      const allowed = ['startDate', 'endDate', 'dimensions', 'type', 'rowLimit', 'startRow', 'dataState', 'aggregationType', 'dimensionFilterGroups'];
+      const url = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`;
+      const results = await Promise.all(body.queries.map(q =>
+        google(url, Object.fromEntries(Object.entries(q || {}).filter(([k]) => allowed.includes(k))))));
+      return json(200, { results });
     }
     return json(400, { error: 'Unknown action.' });
   } catch (e) {
