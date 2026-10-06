@@ -145,7 +145,6 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .dlg-f{display:flex;gap:8px;padding:14px 22px;border-top:1px solid var(--rule);align-items:center}
 .dlg-f .spacer{flex:1}
 </style>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -154,7 +153,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <img src="data:image/png;base64,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" alt="Alimentastic House of Brands">
   <h1>Marketing dashboard</h1>
   <div class="spacer"></div>
-  <button class="linkbtn" id="btnSignOut" hidden>Sign out</button>
+  <button class="linkbtn" id="btnSignOut" hidden>Lock</button>
 </header>
 
 <nav class="tabs" aria-label="Data sources">
@@ -166,31 +165,15 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 
 <main>
 
-  <!-- Setup: no client ID yet -->
-  <section class="gate" id="screenSetup" hidden>
-    <h2>Connect Google Analytics</h2>
-    <p>The dashboard reads GA4 directly with your Google login. It needs an OAuth client ID from Google Cloud once.</p>
-    <ol>
-      <li>In Google Cloud Console, create a project and enable the <b>Google Analytics Data API</b> and the <b>Google Analytics Admin API</b>.</li>
-      <li>Set up the OAuth consent screen and add the scope <code>analytics.readonly</code>.</li>
-      <li>Create an OAuth client ID of type <b>Web application</b> and add this address as an authorised JavaScript origin: <code id="originText"></code></li>
-      <li>Paste the client ID below.</li>
-    </ol>
-    <div class="field">
-      <input id="inpClientId" placeholder="1234567890-abc123.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
-      <button class="btn red" id="btnSaveClient">Save client ID</button>
-    </div>
-    <p class="err" id="setupErr" hidden></p>
-    <p class="note">The client ID is saved in this browser only. To set it for everyone, add it in Netlify as <code>window.DASHBOARD_CLIENT_ID</code> through snippet injection.</p>
-  </section>
-
-  <!-- Sign in -->
+  <!-- Password -->
   <section class="gate" id="screenSignin" hidden>
-    <h2>Sign in to load your data</h2>
-    <p>Use the Google account that has access to your GA4 properties. Access is read-only, and you only see the properties your account can already open in Google Analytics.</p>
-    <div class="field"><button class="btn red" id="btnSignIn">Sign in with Google</button></div>
+    <h2>Enter the dashboard password</h2>
+    <p>This dashboard is protected. Ask Marco for the password.</p>
+    <div class="field">
+      <input id="inpKey" type="password" placeholder="Password" autocomplete="current-password">
+      <button class="btn red" id="btnUnlock">Open dashboard</button>
+    </div>
     <p class="err" id="signinErr" hidden></p>
-    <p class="note"><button class="linkbtn" id="btnChangeClient">Change client ID</button></p>
   </section>
 
   <!-- Dashboard -->
@@ -322,12 +305,12 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <script>
 /* =====================================================================
    CONFIG
-   Paste your Google OAuth client ID here to skip the setup screen for
-   everyone who opens the dashboard.
+   Data comes from the Netlify function in netlify/functions/ga.mjs,
+   which signs in to Google Analytics with a service account. Viewers
+   don't need a Google login or GA access.
    ===================================================================== */
 const CONFIG = {
-  CLIENT_ID: window.DASHBOARD_CLIENT_ID || '',   // set via Netlify snippet injection
-  SCOPE: 'https://www.googleapis.com/auth/analytics.readonly',
+  API: '/.netlify/functions/ga',
   CONCURRENCY: 4
 };
 
@@ -342,7 +325,7 @@ const LS = store('localStorage'), SS = store('sessionStorage');
 /* ---------- DOM helpers ---------- */
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const show = (id) => ['screenSetup','screenSignin','screenDash'].forEach(s => $(s).hidden = s !== id);
+const show = (id) => ['screenSignin','screenDash'].forEach(s => $(s).hidden = s !== id);
 
 /* ---------- Formatting ---------- */
 const NF = new Intl.NumberFormat('en-GB');
@@ -386,8 +369,7 @@ function getRanges(){
 
 /* ---------- State ---------- */
 const state = {
-  clientId: CONFIG.CLIENT_ID || LS.get('clientId', ''),  // injected ID takes priority
-  token: null, tokenExp: 0,
+  key: LS.get('key', ''),
   properties: [],
   selected: LS.get('selected', null),
   view: LS.get('view', 'portfolio'),
@@ -401,81 +383,30 @@ const state = {
   lastSites: []
 };
 
-/* ---------- Auth (Google Identity Services, token model) ---------- */
-class AuthError extends Error { constructor(){ super('Your Google session has expired. Sign in again to continue.'); } }
-let tokenClient = null, pendingAuth = null;
+/* ---------- Data service (Netlify function) ---------- */
+class AuthError extends Error { constructor(msg){ super(msg || ''); } }
 
-function waitForGIS(){
-  return new Promise((res, rej) => {
-    let n = 0;
-    const t = setInterval(() => {
-      if (window.google?.accounts?.oauth2){ clearInterval(t); res(); }
-      else if (++n > 100){ clearInterval(t); rej(new Error('The Google sign-in library did not load. Check your connection or any ad blocker, then reload.')); }
-    }, 100);
-  });
-}
-
-async function initAuth(){
-  await waitForGIS();
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: state.clientId,
-    scope: CONFIG.SCOPE,
-    callback: (resp) => {
-      if (!pendingAuth) return;
-      const p = pendingAuth; pendingAuth = null;
-      if (resp.error) return p.reject(new Error(resp.error_description || resp.error));
-      state.token = resp.access_token;
-      state.tokenExp = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
-      SS.set('token', {t: state.token, e: state.tokenExp});
-      p.resolve();
-    },
-    error_callback: (err) => {
-      if (!pendingAuth) return;
-      const p = pendingAuth; pendingAuth = null;
-      p.reject(new Error(err.type === 'popup_closed' ? 'The sign-in window was closed before finishing.' :
-                         err.type === 'popup_failed_to_open' ? 'The sign-in window was blocked. Allow pop-ups for this site and try again.' :
-                         (err.message || 'Sign-in failed.')));
-    }
-  });
-}
-
-function signIn(){
-  return new Promise((resolve, reject) => {
-    pendingAuth = {resolve, reject};
-    tokenClient.requestAccessToken({prompt: ''});
-  });
-}
-
-function signOut(){
-  if (state.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(state.token, () => {});
-  state.token = null; state.tokenExp = 0; SS.del('token'); state.cache.clear();
-  $('btnSignOut').hidden = true;
-  show('screenSignin');
-}
-
-/* ---------- Google API calls ---------- */
-async function gapi(url, body){
-  if (!state.token || Date.now() > state.tokenExp) throw new AuthError();
-  const r = await fetch(url, {
-    method: body ? 'POST' : 'GET',
-    headers: { 'Authorization': 'Bearer ' + state.token, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if (r.status === 401) throw new AuthError();
+async function api(action, params, body){
+  const qs = new URLSearchParams({ action, ...(params || {}) });
+  let r;
+  try {
+    r = await fetch(`${CONFIG.API}?${qs}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', ...(state.key ? { 'x-dashboard-key': state.key } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch(e){ throw new Error('Could not reach the data service. Check your connection and reload.'); }
+  if (r.status === 401) throw new AuthError(state.key ? 'That password is not right. Try again.' : '');
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error?.message || `Google returned an error (${r.status}).`);
+  if (r.status === 404 && !j.error) throw new Error('The data service was not found. Make sure the netlify/functions/ga.mjs file is in your GitHub repo and Netlify has finished redeploying.');
+  const msg = typeof j.error === 'string' ? j.error : j.error?.message;
+  if (!r.ok) throw new Error(msg || `The data service returned an error (${r.status}).`);
   return j;
 }
 
 async function loadProperties(){
-  const out = []; let page = '';
-  do {
-    const j = await gapi('https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200' + (page ? '&pageToken=' + encodeURIComponent(page) : ''));
-    (j.accountSummaries || []).forEach(a => (a.propertySummaries || []).forEach(p =>
-      out.push({ id: p.property.split('/')[1], name: p.displayName, account: a.displayName })));
-    page = j.nextPageToken || '';
-  } while (page);
-  return out;
+  const j = await api('properties');
+  return j.properties || [];
 }
 
 const M = (names) => names.map(name => ({name}));
@@ -505,7 +436,7 @@ async function fetchCore(prop, R){
   const key = `core|${prop.id}|${iso(R.cur.start)}|${iso(R.cur.end)}|${R.prev ? iso(R.prev.start)+'|'+iso(R.prev.end) : '-'}`;
   if (state.cache.has(key)) return state.cache.get(key);
   const dr = dateRangesParam(R), cur = [dr[0]];
-  const j = await gapi(`https://analyticsdata.googleapis.com/v1beta/properties/${prop.id}:batchRunReports`, { requests: [
+  const j = await api('report', { property: prop.id }, { requests: [
     { dateRanges: dr, metrics: M(TOTAL_METRICS) },
     { dateRanges: dr, dimensions: M(['date']), metrics: M(DAILY_METRICS), limit: 5000 },
     { dateRanges: cur, dimensions: M(['sessionDefaultChannelGroup']), metrics: M(['sessions','keyEvents']), limit: 50 },
@@ -530,7 +461,7 @@ async function fetchDetail(prop, R){
   const key = `detail|${prop.id}|${iso(R.cur.start)}|${iso(R.cur.end)}`;
   if (state.cache.has(key)) return state.cache.get(key);
   const cur = [{ startDate: iso(R.cur.start), endDate: iso(R.cur.end) }];
-  const j = await gapi(`https://analyticsdata.googleapis.com/v1beta/properties/${prop.id}:batchRunReports`, { requests: [
+  const j = await api('report', { property: prop.id }, { requests: [
     { dateRanges: cur, dimensions: M(['pagePath']), metrics: M(['screenPageViews','activeUsers','userEngagementDuration','keyEvents']), orderBys: byDesc('screenPageViews'), limit: 25 },
     { dateRanges: cur, dimensions: M(['landingPage']), metrics: M(['sessions','engagedSessions','keyEvents']), orderBys: byDesc('sessions'), limit: 15 },
     { dateRanges: cur, dimensions: M(['sessionSourceMedium']), metrics: M(['sessions','engagedSessions','keyEvents']), orderBys: byDesc('sessions'), limit: 15 },
@@ -600,19 +531,20 @@ async function load(){
     render(ok, R, single, detail);
     if (failed.length) showAlert(`Some data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
   } catch(e){
-    if (e instanceof AuthError){ handleAuthLost(); return; }
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
     showAlert(esc(e.message));
   } finally {
     if (seq === loadSeq){ setStatus(''); $('content').classList.remove('dim'); }
   }
 }
 
-function handleAuthLost(){
-  state.token = null; SS.del('token');
+function handleAuthLost(e){
+  if (state.key && !(e && e.message)) { state.key = ''; LS.del('key'); }
   show('screenSignin');
-  $('signinErr').textContent = 'Your Google session has expired. Sign in again to continue.';
-  $('signinErr').hidden = false;
+  $('signinErr').textContent = (e && e.message) || '';
+  $('signinErr').hidden = !(e && e.message);
   $('btnSignOut').hidden = true;
+  setTimeout(() => $('inpKey').focus(), 50);
 }
 
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
@@ -854,7 +786,7 @@ function openSites(){
     <div class="grp"><h4>${esc(acc)}</h4>${groups[acc].sort((a,b) => a.name.localeCompare(b.name)).map(p => `
       <label data-name="${esc(p.name.toLowerCase())}"><input type="checkbox" value="${p.id}" ${state.selected.includes(p.id) ? 'checked' : ''}>
       <span>${esc(p.name)}</span><span class="pid">${p.id}</span></label>`).join('')}</div>`).join('') ||
-    '<p class="empty">This Google account has no GA4 properties. Sign out and use an account with access.</p>';
+    '<p class="empty">No GA4 properties are shared with the dashboard yet.</p>';
   $('siteFilter').value = '';
   $('dlgSites').showModal();
 }
@@ -866,24 +798,16 @@ function filterSites(){
 }
 
 function bindUI(){
-  $('originText').textContent = location.origin;
-
-  $('btnSaveClient').onclick = async () => {
-    const v = $('inpClientId').value.trim();
-    if (!/\.apps\.googleusercontent\.com$/.test(v)){
-      $('setupErr').textContent = 'That does not look like an OAuth client ID. It ends in .apps.googleusercontent.com.'; $('setupErr').hidden = false; return;
-    }
-    state.clientId = v; LS.set('clientId', v); $('setupErr').hidden = true;
-    await startSignin();
-  };
-  $('btnChangeClient').onclick = () => { $('inpClientId').value = state.clientId; show('screenSetup'); };
-
-  $('btnSignIn').onclick = async () => {
+  const unlock = async () => {
+    const v = $('inpKey').value;
+    if (!v) return;
+    state.key = v; LS.set('key', v);
     $('signinErr').hidden = true;
-    try { await signIn(); await enterDashboard(); }
-    catch(e){ $('signinErr').textContent = e.message; $('signinErr').hidden = false; }
+    await enterDashboard();
   };
-  $('btnSignOut').onclick = signOut;
+  $('btnUnlock').onclick = unlock;
+  $('inpKey').onkeydown = (e) => { if (e.key === 'Enter') unlock(); };
+  $('btnSignOut').onclick = () => { state.key = ''; LS.del('key'); state.cache.clear(); $('inpKey').value = ''; handleAuthLost(); };
 
   $('selView').onchange = () => { state.view = $('selView').value; LS.set('view', state.view); load(); };
   $('segRange').onclick = (e) => {
@@ -931,14 +855,21 @@ function bindUI(){
 /* ---------- Boot ---------- */
 async function enterDashboard(){
   show('screenDash');
-  $('btnSignOut').hidden = false;
+  $('btnSignOut').hidden = !state.key;
+  $('alert').hidden = true;
   setStatus('Loading your GA4 properties…');
   try {
     state.properties = await loadProperties();
   } catch(e){
     setStatus('');
-    if (e instanceof AuthError){ handleAuthLost(); return; }
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
     showAlert(`Could not list your GA4 properties: ${esc(e.message)}`);
+    $('content').hidden = true;
+    return;
+  }
+  if (!state.properties.length){
+    showAlert('The dashboard is connected, but its service account cannot see any GA4 properties yet. In Google Analytics, add the service account email as a Viewer under Admin → Property access management, then reload this page.');
+    $('content').hidden = true;
     return;
   }
   setStatus('');
@@ -952,18 +883,9 @@ async function enterDashboard(){
   if (firstRun && state.properties.length > 1) openSites();
 }
 
-async function startSignin(){
-  show('screenSignin');
-  try { await initAuth(); }
-  catch(e){ $('signinErr').textContent = e.message; $('signinErr').hidden = false; }
-}
-
-(async function boot(){
+(function boot(){
   bindUI();
-  if (!state.clientId){ show('screenSetup'); return; }
-  await startSignin();
-  const saved = SS.get('token', null);
-  if (saved && saved.e > Date.now()){ state.token = saved.t; state.tokenExp = saved.e; enterDashboard(); }
+  enterDashboard();
 })();
 </script>
 </body>
