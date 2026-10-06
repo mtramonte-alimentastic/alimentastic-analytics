@@ -182,7 +182,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlView"><span>View</span><select id="selView"></select></label>
       <div class="ctl" id="ctlSites"><span>Sites</span><button class="btn ghost" id="btnSites">Choose sites</button></div>
       <label class="ctl" id="ctlGscView" hidden><span>View</span><select id="selGscView"></select></label>
-      <label class="ctl" id="ctlSocView" hidden><span>View</span><select id="selSocView"></select></label>
+      <label class="ctl" id="ctlSocView" hidden><span>Brand</span><select id="selSocView"></select></label>
+      <label class="ctl" id="ctlSocChannel" hidden><span>Channel</span><select id="selSocChannel"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
           <button data-days="7">7 days</button>
@@ -480,7 +481,8 @@ const state = {
   gscSites: null,
   gMetric: 'clicks',
   social: null,
-  socView: LS.get('socView', 'all'),
+  socBrand: LS.get('socBrand', 'all'),
+  socChannel: LS.get('socChannel', 'all'),
   sMetric: 'reach',
   metric: 'activeUsers',
   cache: new Map(),
@@ -613,7 +615,7 @@ function syncTabUI(){
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc;
   if (!ga) $('content').hidden = true;
   if (!gsc) $('gscContent').hidden = true;
   if (!soc) $('socContent').hidden = true;
@@ -945,30 +947,41 @@ function socFriendly(e){
   return e;
 }
 
+function socAccounts(){
+  const m = new Map();
+  state.social.rows.forEach(r => m.set(r.platform + '|' + r.account, r));
+  return [...m.values()];
+}
+
 function buildSocSelect(){
-  const rows = state.social.rows;
-  const accounts = new Map();
-  rows.forEach(r => accounts.set(r.platform + '|' + r.account, r));
-  const perPlat = {};
-  [...accounts.values()].forEach(r => (perPlat[r.platform] ||= []).push(r));
-  const plats = Object.keys(perPlat).filter(p => perPlat[p].length > 1).sort();
-  const brands = {};
-  [...accounts.values()].forEach(r => (brands[brandOf(r)] ||= new Set()).add(platLabel(r.platform)));
-  const brandNames = Object.keys(brands).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
-  const opt = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
-  const values = ['all'].concat(plats.map(p => 'p:' + p), brandNames.map(b => 'b:' + b));
-  if (!values.includes(state.socView)) state.socView = 'all';
-  $('selSocView').innerHTML = opt('all', 'All accounts') +
-    (plats.length ? `<optgroup label="Platforms">${plats.map(p => opt('p:' + p, `${platLabel(p)} (all)`)).join('')}</optgroup>` : '') +
-    `<optgroup label="Brands">${brandNames.map(b => opt('b:' + b, `${b} (${[...brands[b]].sort().join(' + ')})`)).join('')}</optgroup>`;
-  $('selSocView').value = state.socView;
+  const accts = socAccounts();
+  const brands = [...new Set(accts.map(brandOf))].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+  if (state.socBrand !== 'all' && !brands.includes(state.socBrand)) state.socBrand = 'all';
+  $('selSocView').innerHTML = `<option value="all">All brands</option>` + brands.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  $('selSocView').value = state.socBrand;
+  buildChannelSelect();
+}
+
+function buildChannelSelect(){
+  const accts = socAccounts().filter(r => state.socBrand === 'all' || brandOf(r) === state.socBrand);
+  const plats = [...new Set(accts.map(r => r.platform))].sort((a, b) => platLabel(a).localeCompare(platLabel(b)));
+  const sel = $('selSocChannel');
+  if (plats.length === 1){
+    state.socChannel = 'all';
+    sel.innerHTML = `<option value="all">${esc(platLabel(plats[0]))}</option>`;
+    sel.disabled = true;
+  } else {
+    if (state.socChannel !== 'all' && !plats.includes(state.socChannel)) state.socChannel = 'all';
+    sel.innerHTML = `<option value="all">All channels</option>` + plats.map(p => `<option value="${esc(p)}">${esc(platLabel(p))}</option>`).join('');
+    sel.disabled = false;
+  }
+  sel.value = state.socChannel;
 }
 
 function socRowsInView(){
-  const v = state.socView, rows = state.social.rows;
-  if (v.startsWith('p:')) return rows.filter(r => r.platform === v.slice(2));
-  if (v.startsWith('b:')) return rows.filter(r => brandOf(r) === v.slice(2));
-  return rows;
+  return state.social.rows.filter(r =>
+    (state.socBrand === 'all' || brandOf(r) === state.socBrand) &&
+    (state.socChannel === 'all' || r.platform === state.socChannel));
 }
 
 async function loadSocial(){
@@ -1059,7 +1072,7 @@ function renderSocial(R){
   state.lastSoc = { all, R, pi };
   renderSocTrend();
 
-  const brandView = state.socView.startsWith('b:');
+  const brandView = state.socBrand !== 'all';
   const single = accounts.length < 2;
   $('sPanelAccounts').hidden = single;
   $('sAccSub').textContent = brandView ? 'By channel' : 'Select a row to open that brand';
@@ -1415,11 +1428,12 @@ function bindUI(){
     if (state.tab === b.dataset.tab) return;
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
-  $('selSocView').onchange = () => { state.socView = $('selSocView').value; LS.set('socView', state.socView); load(); };
+  $('selSocView').onchange = () => { state.socBrand = $('selSocView').value; LS.set('socBrand', state.socBrand); buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); };
+  $('selSocChannel').onchange = () => { state.socChannel = $('selSocChannel').value; LS.set('socChannel', state.socChannel); load(); };
   $('sSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.sMetric = b.dataset.m; renderSocTrend(); };
   $('sTblAccounts').onclick = (e) => {
     const tr = e.target.closest('tr[data-brand]');
-    if (tr){ state.socView = 'b:' + tr.dataset.brand; LS.set('socView', state.socView); $('selSocView').value = state.socView; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    if (tr){ state.socBrand = tr.dataset.brand; LS.set('socBrand', state.socBrand); $('selSocView').value = state.socBrand; buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   };
   $('sTblAccounts').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-brand]')) e.target.click(); };
   $('selGscView').onchange = () => { state.gscView = $('selGscView').value; LS.set('gscView', state.gscView); load(); };
