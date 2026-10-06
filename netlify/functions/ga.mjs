@@ -2,8 +2,11 @@
 // dashboard viewers need no Google login or GA access.
 //
 // Environment variables (Netlify → Site configuration → Environment variables):
-//   GA_CLIENT_EMAIL     the service account's email (client_email in the JSON key)
-//   GA_PRIVATE_KEY      the private key (private_key in the JSON key), BEGIN/END lines included
+//   Either a saved Google sign-in:
+//     GA_OAUTH_CLIENT_ID, GA_OAUTH_CLIENT_SECRET, GA_REFRESH_TOKEN
+//   or a service account key:
+//     GA_CLIENT_EMAIL   the service account's email (client_email in the JSON key)
+//     GA_PRIVATE_KEY    the private key (private_key in the JSON key)
 //   DASHBOARD_PASSWORD  optional: if set, viewers must enter this password
 
 import crypto from 'node:crypto';
@@ -21,13 +24,31 @@ const fail = (message, status = 500) => Object.assign(new Error(message), { stat
 function credentials() {
   const email = (process.env.GA_CLIENT_EMAIL || '').trim();
   let key = process.env.GA_PRIVATE_KEY || '';
-  if (!email || !key) throw fail('The dashboard is not connected to Google Analytics yet. Add GA_CLIENT_EMAIL and GA_PRIVATE_KEY in Netlify under Site configuration → Environment variables, then redeploy.');
+  if (!email || !key) throw fail('The dashboard is not connected to Google Analytics yet. Add GA_OAUTH_CLIENT_ID, GA_OAUTH_CLIENT_SECRET and GA_REFRESH_TOKEN (or GA_CLIENT_EMAIL and GA_PRIVATE_KEY) in Netlify under Site configuration → Environment variables, then redeploy.');
   key = key.trim().replace(/^"|"$/g, '').replace(/\\n/g, '\n');
   return { email, key };
 }
 
+async function refreshTokenLogin() {
+  const client_id = (process.env.GA_OAUTH_CLIENT_ID || '').trim();
+  const client_secret = (process.env.GA_OAUTH_CLIENT_SECRET || '').trim();
+  const refresh_token = (process.env.GA_REFRESH_TOKEN || '').trim();
+  if (!client_id || !client_secret) throw fail('GA_REFRESH_TOKEN is set, but GA_OAUTH_CLIENT_ID or GA_OAUTH_CLIENT_SECRET is missing in Netlify.');
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', client_id, client_secret, refresh_token })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw fail(`Google rejected the saved sign-in: ${j.error_description || j.error || r.status}. Create a new refresh token and update GA_REFRESH_TOKEN in Netlify.`);
+  cached = { token: j.access_token, exp: Date.now() + (Number(j.expires_in || 3600) - 120) * 1000 };
+  return cached.token;
+}
+
 async function accessToken() {
   if (cached.token && Date.now() < cached.exp) return cached.token;
+  // Option A: a saved Google sign-in (refresh token). Option B: a service account key.
+  if (process.env.GA_REFRESH_TOKEN) return refreshTokenLogin();
   const { email, key } = credentials();
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
