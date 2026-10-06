@@ -11,7 +11,7 @@
 
 import crypto from 'node:crypto';
 
-const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly';
+const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/spreadsheets.readonly';
 let cached = { token: null, exp: 0 };
 
 const json = (status, body) => new Response(JSON.stringify(body), {
@@ -92,6 +92,71 @@ function authorised(req) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// ---------- Social sheet parsing (Windsor export) ----------
+const COLS = {
+  date: ['date'],
+  datasource: ['datasource', 'data source', 'source'],
+  account: ['account_name', 'account name'],
+  ig_followers: ['followers_count', 'profile followers'],
+  reach: ['reach'],
+  views: ['views'],
+  interactions: ['total_interactions', 'total interactions'],
+  li_impr: ['account_analytics_impression_count', 'total impression count'],
+  li_uimpr: ['account_analytics_unique_impressions_count', 'total unique impression count'],
+  li_eng: ['account_analytics_total_engagements', 'total engagements'],
+  li_followers: ['organization_follower_count', 'organization follower count'],
+  li_gain_org: ['followers_gain_organic', "organic growth of the organization's followers per day"],
+  li_gain_paid: ['followers_gain_paid', "paid growth of the organization's followers per day"]
+};
+const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ');
+const num = (v) => {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return v;
+  const s = String(v).trim();
+  if (!s || s.toLowerCase() === 'null') return null;
+  const n = Number(s.replace(/\s/g, ''));
+  return Number.isFinite(n) ? n : null;
+};
+function toIsoDate(v) {
+  if (typeof v === 'number' && v > 20000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5);
+    return d.toISOString().slice(0, 10);
+  }
+  const s = String(v ?? '').trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return null;
+}
+function parseSocial(values) {
+  if (!values.length) return { rows: [], firstDate: null, lastDate: null };
+  const head = values[0].map(norm);
+  const idx = {};
+  for (const [k, names] of Object.entries(COLS)) idx[k] = head.findIndex(h => names.includes(h));
+  if (idx.datasource < 0) idx.datasource = head.findIndex(h => h === 'source');
+  const get = (row, k) => idx[k] >= 0 ? row[idx[k]] : null;
+  const rows = [];
+  for (const row of values.slice(1)) {
+    const date = toIsoDate(get(row, 'date'));
+    const account = String(get(row, 'account') ?? '').trim();
+    if (!date || !account) continue;
+    let src = norm(get(row, 'datasource'));
+    if (!src) src = num(get(row, 'li_impr')) != null || num(get(row, 'li_followers')) != null ? 'linkedin' : 'instagram';
+    const platform = src.includes('linkedin') ? 'linkedin' : src.includes('instagram') ? 'instagram' : src.includes('facebook') ? 'facebook' : src;
+    if (platform === 'linkedin') {
+      const go = num(get(row, 'li_gain_org')), gp = num(get(row, 'li_gain_paid'));
+      rows.push({ date, platform, account,
+        reach: num(get(row, 'li_uimpr')), impressions: num(get(row, 'li_impr')), engagements: num(get(row, 'li_eng')),
+        followers: num(get(row, 'li_followers')), newFollowers: go == null && gp == null ? null : (go || 0) + (gp || 0) });
+    } else {
+      rows.push({ date, platform, account,
+        reach: num(get(row, 'reach')), impressions: num(get(row, 'views')), engagements: num(get(row, 'interactions')),
+        followers: num(get(row, 'ig_followers')), newFollowers: null });
+    }
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  return { rows, firstDate: rows[0]?.date || null, lastDate: rows[rows.length - 1]?.date || null };
+}
+
 export default async (req) => {
   if (!authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
@@ -114,6 +179,15 @@ export default async (req) => {
       const body = await req.json().catch(() => null);
       if (!body || !Array.isArray(body.requests) || body.requests.length < 1 || body.requests.length > 5) return json(400, { error: 'Invalid report request.' });
       return json(200, await google(`https://analyticsdata.googleapis.com/v1beta/properties/${property}:batchRunReports`, { requests: body.requests }));
+    }
+    if (action === 'social') {
+      let id = (process.env.SOCIAL_SHEET_ID || '').trim();
+      const m = id.match(/\/d\/([a-zA-Z0-9_-]+)/); if (m) id = m[1];
+      if (!id) throw fail('The social data sheet is not connected yet. Add SOCIAL_SHEET_ID (the Google Sheet link or ID) in Netlify under Site configuration → Environment variables, then redeploy.');
+      const tab = (process.env.SOCIAL_SHEET_TAB || '').trim();
+      const range = tab ? `'${tab.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
+      const j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
+      return json(200, parseSocial(j.values || []));
     }
     if (action === 'gsc_sites') {
       return json(200, await google('https://www.googleapis.com/webmasters/v3/sites'));

@@ -159,7 +159,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <nav class="tabs" aria-label="Data sources">
   <button class="tab active" data-tab="ga" aria-current="page">Web analytics</button>
   <button class="tab" data-tab="gsc">Search Console</button>
-  <button class="tab" disabled>Social<small>coming next</small></button>
+  <button class="tab" data-tab="social">Social</button>
   <button class="tab" disabled>Newsletter<small>coming next</small></button>
 </nav>
 
@@ -182,6 +182,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlView"><span>View</span><select id="selView"></select></label>
       <div class="ctl" id="ctlSites"><span>Sites</span><button class="btn ghost" id="btnSites">Choose sites</button></div>
       <label class="ctl" id="ctlGscView" hidden><span>View</span><select id="selGscView"></select></label>
+      <label class="ctl" id="ctlSocView" hidden><span>View</span><select id="selSocView"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
           <button data-days="7">7 days</button>
@@ -284,6 +285,47 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         </div>
       </div>
       <p class="footnote" id="detailNote" hidden>Pick a single site under View to see pages, landing pages, sources and key events.</p>
+    </div>
+
+    <!-- ===== Social ===== -->
+    <div id="socContent" hidden>
+      <div class="kpis" id="sKpis"></div>
+      <p class="footnote" id="sNote"></p>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Trend</h2>
+          <span class="sub" id="sTrendSub"></span>
+          <div class="tools">
+            <div class="seg small" id="sSegMetric">
+              <button data-m="reach">Reach</button>
+              <button data-m="impressions">Impressions</button>
+              <button data-m="engagements">Engagements</button>
+            </div>
+          </div>
+        </div>
+        <div class="chartbox"><canvas id="sTrendChart" aria-label="Social trend chart"></canvas></div>
+      </section>
+
+      <section class="panel" id="sPanelAccounts">
+        <div class="ph">
+          <h2 class="bar">Accounts</h2>
+          <span class="sub">Select a row to open that account</span>
+          <div class="tools"><button class="mini" data-csv="sAccounts">Download CSV</button></div>
+        </div>
+        <div class="tw" id="sTblAccounts"></div>
+      </section>
+
+      <div class="grid2">
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Impressions by platform</h2></div>
+          <div id="sLstPlatforms"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Followers</h2><span class="sub">Latest count</span></div>
+          <div id="sLstFollowers"></div>
+        </section>
+      </div>
     </div>
 
     <!-- ===== Search Console ===== -->
@@ -437,6 +479,9 @@ const state = {
   gscView: LS.get('gscView', 'portfolio'),
   gscSites: null,
   gMetric: 'clicks',
+  social: null,
+  socView: LS.get('socView', 'all'),
+  sMetric: 'reach',
   metric: 'activeUsers',
   cache: new Map(),
   chart: null,
@@ -558,18 +603,20 @@ const derive = (t) => t && ({ ...t,
 let loadSeq = 0;
 function load(){
   syncTabUI();
-  return state.tab === 'gsc' ? loadGsc() : loadGa();
+  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : loadGa();
 }
 
 function syncTabUI(){
-  const gsc = state.tab === 'gsc';
+  const gsc = state.tab === 'gsc', soc = state.tab === 'social', ga = !gsc && !soc;
   document.querySelectorAll('.tab[data-tab]').forEach(b => {
     const on = b.dataset.tab === state.tab;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = gsc; $('ctlSites').hidden = gsc; $('ctlGscView').hidden = !gsc;
-  if (gsc) $('content').hidden = true; else $('gscContent').hidden = true;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc;
+  if (!ga) $('content').hidden = true;
+  if (!gsc) $('gscContent').hidden = true;
+  if (!soc) $('socContent').hidden = true;
 }
 
 async function loadGa(){
@@ -873,6 +920,196 @@ function renderGscTrend(){
   });
 }
 
+/* =====================================================================
+   SOCIAL (Windsor → Google Sheet → dashboard)
+   ===================================================================== */
+const PLATFORM = { instagram: 'Instagram', linkedin: 'LinkedIn', facebook: 'Facebook' };
+const platLabel = (p) => PLATFORM[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Other');
+
+function socFriendly(e){
+  if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(e.message))
+    return new Error('The saved Google sign-in does not include Google Sheets yet. Redo the OAuth Playground step with all three scopes and replace GA_REFRESH_TOKEN in Netlify.');
+  if (/Sheets API has not been used|sheets\.googleapis\.com.*disabled/i.test(e.message))
+    return new Error('The Google Sheets API is not enabled in your Google Cloud project yet. ' + e.message);
+  return e;
+}
+
+function buildSocSelect(){
+  const rows = state.social.rows;
+  const plats = [...new Set(rows.map(r => r.platform))].sort();
+  const accts = [...new Map(rows.map(r => [r.platform + '|' + r.account, r])).values()]
+    .sort((a, b) => a.platform.localeCompare(b.platform) || a.account.localeCompare(b.account));
+  const opts = [['all', 'All accounts']]
+    .concat(plats.length > 1 ? plats.map(p => ['p:' + p, `All ${platLabel(p)}`]) : [])
+    .concat(accts.map(a => ['a:' + a.platform + '|' + a.account, `${a.account} (${platLabel(a.platform)})`]));
+  if (!opts.some(o => o[0] === state.socView)) state.socView = 'all';
+  $('selSocView').innerHTML = opts.map(o => `<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
+  $('selSocView').value = state.socView;
+}
+
+function socRowsInView(){
+  const v = state.socView, rows = state.social.rows;
+  if (v.startsWith('p:')) return rows.filter(r => r.platform === v.slice(2));
+  if (v.startsWith('a:')){ const k = v.slice(2); return rows.filter(r => r.platform + '|' + r.account === k); }
+  return rows;
+}
+
+async function loadSocial(){
+  const seq = ++loadSeq;
+  const R = getRanges(1);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('socContent').classList.add('dim');
+  try {
+    if (!state.social){
+      setStatus('Loading social data…');
+      state.social = await api('social');
+      if (seq !== loadSeq) return;
+      if (state.social.rows.length) buildSocSelect();
+    }
+    if (seq !== loadSeq) return;
+    if (!state.social.rows.length){
+      $('socContent').hidden = true;
+      showAlert('The social data sheet is connected but has no rows yet. Run the Windsor export once, then click Refresh.');
+      return;
+    }
+    $('socContent').hidden = false;
+    renderSocial(R);
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
+    $('socContent').hidden = true;
+    showAlert(esc(socFriendly(e).message));
+  } finally {
+    if (seq === loadSeq){ setStatus(''); $('socContent').classList.remove('dim'); }
+  }
+}
+
+function socSum(rows){
+  const t = { reach: 0, impressions: 0, engagements: 0, newFollowers: 0, hasNew: false };
+  rows.forEach(r => {
+    t.reach += r.reach || 0; t.impressions += r.impressions || 0; t.engagements += r.engagements || 0;
+    if (r.newFollowers != null){ t.newFollowers += r.newFollowers; t.hasNew = true; }
+  });
+  t.er = t.impressions ? t.engagements / t.impressions : 0;
+  return t;
+}
+
+// Latest known follower count per account on or before a date; null if any account has no value then.
+function socFollowers(rows, untilIso){
+  const latest = new Map();
+  rows.forEach(r => {
+    if (r.followers == null || r.date > untilIso) return;
+    const k = r.platform + '|' + r.account, cur = latest.get(k);
+    if (!cur || r.date > cur.date) latest.set(k, r);
+  });
+  return latest;
+}
+
+function renderSocial(R){
+  const all = socRowsInView();
+  const { firstDate, lastDate } = state.social;
+  const ci = [iso(R.cur.start), iso(R.cur.end)];
+  const pOk = R.prev && iso(R.prev.start) >= firstDate;
+  const pi = pOk ? [iso(R.prev.start), iso(R.prev.end)] : null;
+  const curRows = all.filter(r => r.date >= ci[0] && r.date <= ci[1]);
+  const prevRows = pi ? all.filter(r => r.date >= pi[0] && r.date <= pi[1]) : [];
+  const cur = socSum(curRows), prev = pi ? socSum(prevRows) : null;
+
+  const accounts = [...new Set(all.map(r => r.platform + '|' + r.account))];
+  const fCur = socFollowers(all, ci[1]);
+  const fPrev = pi ? socFollowers(all, pi[1]) : null;
+  const followersNow = [...fCur.values()].reduce((s, r) => s + r.followers, 0);
+  const followersPrevComplete = fPrev && [...fCur.keys()].every(k => fPrev.has(k));
+  const followersPrev = followersPrevComplete ? [...fCur.keys()].reduce((s, k) => s + fPrev.get(k).followers, 0) : null;
+  const hasIG = all.some(r => r.platform === 'instagram');
+
+  const kpis = [
+    { label: 'Reach', v: fNum(cur.reach), d: prev && delta(cur.reach, prev.reach) },
+    { label: 'Impressions', v: fNum(cur.impressions), d: prev && delta(cur.impressions, prev.impressions) },
+    { label: 'Engagements', v: fNum(cur.engagements), d: prev && delta(cur.engagements, prev.engagements) },
+    { label: 'Engagement rate', v: fPct(cur.er), d: prev && delta(cur.er, prev.er, true) },
+    { label: 'Followers', v: fCur.size ? fNum(followersNow) : '–', d: followersPrev != null ? delta(followersNow, followersPrev) : null }
+  ];
+  if (cur.hasNew) kpis.push({ label: hasIG ? 'New followers (LinkedIn)' : 'New followers', v: fNum(cur.newFollowers), d: prev && prev.hasNew ? delta(cur.newFollowers, prev.newFollowers) : null });
+  $('sKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${k.label}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}</div>`).join('');
+
+  const notes = [`Data from Windsor's daily export, up to ${fDate(parseISO(lastDate), true)}.`];
+  if (R.prev && !pOk) notes.push('There is not enough history yet to compare with the previous period.');
+  if (hasIG) notes.push('Instagram views are counted as impressions. Reach is added up per day, so someone reached on two days counts twice.');
+  $('sNote').textContent = notes.join(' ');
+
+  state.lastSoc = { all, R, pi };
+  renderSocTrend();
+
+  const single = state.socView.startsWith('a:');
+  $('sPanelAccounts').hidden = single;
+  if (!single){
+    const rows = accounts.map(k => {
+      const [platform, account] = [k.slice(0, k.indexOf('|')), k.slice(k.indexOf('|') + 1)];
+      const c = socSum(curRows.filter(r => r.platform + '|' + r.account === k));
+      const p = pi ? socSum(prevRows.filter(r => r.platform + '|' + r.account === k)) : null;
+      return { key: k, account, platform: platLabel(platform), followers: fCur.get(k)?.followers ?? null,
+        reach: c.reach, dReach: p && delta(c.reach, p.reach), impressions: c.impressions, dImpr: p && delta(c.impressions, p.impressions),
+        engagements: c.engagements, dEng: p && delta(c.engagements, p.engagements), er: c.er };
+    }).sort((a, b) => b.impressions - a.impressions);
+    const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
+    $('sTblAccounts').innerHTML = `<table><thead><tr><th>Account</th><th>Platform</th><th class="n">Followers</th><th class="n">Reach</th><th class="n">Impressions</th><th class="n">Engagements</th><th class="n">Eng. rate</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="click" data-key="${esc(r.key)}" tabindex="0"><td><b>${esc(r.account)}</b></td><td>${esc(r.platform)}</td>
+      <td class="n">${r.followers == null ? '–' : fNum(r.followers)}</td>
+      <td class="n">${fNum(r.reach)}${dl(r.dReach)}</td><td class="n">${fNum(r.impressions)}${dl(r.dImpr)}</td>
+      <td class="n">${fNum(r.engagements)}${dl(r.dEng)}</td><td class="n">${fPct(r.er)}</td></tr>`).join('')}</tbody></table>`;
+    state.csv.sAccounts = { name: 'social-accounts', cols: ['account','platform','followers','reach','impressions','engagements','er'], rows };
+  }
+
+  const byPlat = sumByKey([curRows.map(r => ({ platform: platLabel(r.platform), impressions: r.impressions || 0 }))], 'platform', ['impressions']).sort((a, b) => b.impressions - a.impressions);
+  renderBars('sLstPlatforms', byPlat, 'platform', 'impressions');
+  const fl = [...fCur.values()].map(r => ({ name: `${r.account} (${platLabel(r.platform)})`, followers: r.followers })).sort((a, b) => b.followers - a.followers);
+  if (fl.length) renderBars('sLstFollowers', fl, 'name', 'followers');
+  else $('sLstFollowers').innerHTML = '<p class="empty">No follower counts in the data yet.</p>';
+}
+
+function renderSocTrend(){
+  const { all, R, pi } = state.lastSoc || {};
+  if (!all) return;
+  const m = state.sMetric;
+  document.querySelectorAll('#sSegMetric button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  const daily = new Map();
+  all.forEach(r => daily.set(r.date, (daily.get(r.date) || 0) + (r[m] || 0)));
+  const { firstDate, lastDate } = state.social;
+  const curDates = dateList(R.cur).map(d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+  const prevDates = pi ? dateList(R.prev).map(d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`) : [];
+  const val = (d) => d == null || d < firstDate || d > lastDate ? null : (daily.get(d) || 0);
+  let cv = curDates.map(val), pv = curDates.map((_, i) => pi ? val(prevDates[i]) : null);
+  const weekly = R.days > 120, step = weekly ? 7 : 1;
+  if (weekly){
+    const b = (arr) => { const o = []; for (let i = 0; i < arr.length; i += 7){ const s = arr.slice(i, i + 7).filter(v => v != null); o.push(s.length ? s.reduce((a, x) => a + x, 0) : null); } return o; };
+    cv = b(cv); pv = b(pv);
+  }
+  const idx = curDates.map((_, i) => i).filter(i => i % step === 0);
+  const labels = idx.map(i => fDate(parseISO(curDates[i])));
+  const tips = idx.map(i => weekly ? `Week from ${fDate(parseISO(curDates[i]), true)}` : fDate(parseISO(curDates[i]), true) + (pi && prevDates[i] ? ` vs ${fDate(parseISO(prevDates[i]), true)}` : ''));
+  $('sTrendSub').textContent = weekly ? 'Weekly' : 'Daily';
+  const ds = [{ label: 'This period', data: cv, borderColor: '#D6001C', backgroundColor: 'rgba(214,0,28,.08)', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: .25, fill: true, spanGaps: false }];
+  if (pi) ds.push({ label: state.compare === 'yoy' ? 'Last year' : 'Previous period', data: pv, borderColor: '#000', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 3, tension: .25, fill: false });
+  if (state.sChart) state.sChart.destroy();
+  if (!window.Chart) return;
+  state.sChart = new Chart($('sTrendChart'), {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 18, boxHeight: 2, color: '#000' } },
+        tooltip: { backgroundColor: '#000', titleFont: { weight: 700 }, padding: 10, cornerRadius: 0,
+          callbacks: { title: (it) => tips[it[0].dataIndex], label: (c) => ` ${c.dataset.label}: ${c.parsed.y == null ? '–' : fNum(c.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 18 }, border: { color: '#000' } },
+        y: { beginAtZero: true, grid: { color: '#ececec' }, border: { display: false }, ticks: { callback: (v) => NF.format(v) } }
+      }
+    }
+  });
+}
+
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
 function showAlert(html){ $('alert').innerHTML = html; $('alert').hidden = false; }
 
@@ -1151,12 +1388,19 @@ function bindUI(){
     state.range = { from: f, to: t }; LS.set('range', state.range); load();
   };
   $('selCompare').onchange = () => { state.compare = $('selCompare').value; LS.set('compare', state.compare); load(); };
-  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; load(); };
+  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; load(); };
 
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => {
     if (state.tab === b.dataset.tab) return;
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
+  $('selSocView').onchange = () => { state.socView = $('selSocView').value; LS.set('socView', state.socView); load(); };
+  $('sSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.sMetric = b.dataset.m; renderSocTrend(); };
+  $('sTblAccounts').onclick = (e) => {
+    const tr = e.target.closest('tr[data-key]');
+    if (tr){ state.socView = 'a:' + tr.dataset.key; LS.set('socView', state.socView); $('selSocView').value = state.socView; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  };
+  $('sTblAccounts').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-key]')) e.target.click(); };
   $('selGscView').onchange = () => { state.gscView = $('selGscView').value; LS.set('gscView', state.gscView); load(); };
   $('gSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.gMetric = b.dataset.m; renderGscTrend(); };
   $('gTblSites').onclick = (e) => {
