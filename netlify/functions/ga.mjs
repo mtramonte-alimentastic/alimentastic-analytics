@@ -210,7 +210,7 @@ const METRIC_NAMES = {
 };
 async function klaviyoMetricIds(acct) {
   const all = await klaviyoAll(acct, 'metrics/?fields[metric]=name,integration', 10);
-  const ids = {};
+  const ids = { _label: {} };
   for (const [k, names] of Object.entries(METRIC_NAMES)) {
     for (const n of names) {
       const hits = all.filter(m => (m.attributes?.name || '').toLowerCase() === n);
@@ -219,7 +219,7 @@ async function klaviyoMetricIds(acct) {
       const pick = k === 'order'
         ? (hits.find(m => SHOPS.some(s => integ(m).includes(s))) || hits.find(m => integ(m) && integ(m) !== 'api') || hits[0])
         : (hits.find(m => integ(m) === 'klaviyo') || hits[0]);
-      if (pick) { ids[k] = pick.id; break; }
+      if (pick) { ids[k] = pick.id; ids._label[pick.id] = `${pick.attributes?.name} (${pick.attributes?.integration?.name || 'no integration'})`; break; }
     }
   }
   return ids;
@@ -326,14 +326,16 @@ async function klaviyoCampaigns(acct, start, end) {
       filter: 'equals(send_channel,"email")'
     } } });
     let report;
-    try { report = await ask(conv); }
+    const tried = [];
+    try { tried.push(ids._label[conv] || conv); report = await ask(conv); }
     catch (err) {
       // Some "Placed Order" metrics can't be used for campaign revenue; load campaigns without revenue instead.
       const fallback = ids.opened || ids.received;
-      if (!/conversion metric/i.test(err.message) || !fallback || conv === fallback) throw err;
+      if (!/conversion metric/i.test(err.message) || !fallback || conv === fallback) throw fail(`${err.message} [tried: ${tried.join(', ')}]`, err.status || 400);
       conv = fallback; revenueOk = false;
       await sleep(1100);
-      report = await ask(conv);
+      try { tried.push(ids._label[conv] || conv); report = await ask(conv); }
+      catch (err2) { throw fail(`${err2.message} [tried: ${tried.join(', ')}]`, err2.status || 400); }
     }
     results.push(...(report.data?.attributes?.results || []));
   }
