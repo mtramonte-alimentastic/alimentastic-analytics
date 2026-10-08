@@ -162,10 +162,13 @@ function parseSocial(values) {
 // KLAVIYO_ACCOUNTS: one brand per line (or separated by ;) as  Brand name: pk_xxxxxxxx
 const KLAVIYO_REVISION = '2024-10-15';
 function klaviyoAccounts() {
-  return (process.env.KLAVIYO_ACCOUNTS || '').split(/[\n;]+/).map(s => s.trim()).filter(Boolean).map(s => {
-    const i = s.search(/[:=]/);
-    return i > 0 ? { brand: s.slice(0, i).trim(), key: s.slice(i + 1).trim() } : null;
-  }).filter(a => a && a.brand && a.key);
+  // Accepts "Brand: pk_..." pairs separated by line breaks, semicolons, commas or just spaces.
+  const raw = process.env.KLAVIYO_ACCOUNTS || '';
+  const out = [];
+  const re = /([^:;=,\n]+?)\s*[:=]\s*(pk_[A-Za-z0-9_]+)/g;
+  let m;
+  while ((m = re.exec(raw))) out.push({ brand: m[1].replace(/^[\s,;]+/, '').trim(), key: m[2] });
+  return out.filter(a => a.brand && a.key);
 }
 function klaviyoAccount(brand) {
   const accts = klaviyoAccounts();
@@ -223,10 +226,39 @@ function aggBody(metricId, measurement, start, endExcl, by) {
     filter: [`greater-or-equal(datetime,${start}T00:00:00)`, `less-than(datetime,${endExcl}T00:00:00)`],
     ...(by ? { by } : {}) } } };
 }
+// Klaviyo reports cover at most about a year, so longer ranges are split into pieces.
+function yearChunks(start, end) {
+  const out = []; let s = start;
+  while (s <= end) {
+    const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 364);
+    const e = d.toISOString().slice(0, 10) < end ? d.toISOString().slice(0, 10) : end;
+    out.push([s, e]); s = dayAfter(e);
+  }
+  return out;
+}
 const isoDay = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : null;
 const dayAfter = (s) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
 
 async function klaviyoDaily(acct, start, end) {
+  const parts = yearChunks(start, end);
+  if (parts.length > 1) {
+    const merged = { metrics: [], revenueAttributed: false };
+    for (const [s, e] of parts) {
+      const d = await klaviyoDailyChunk(acct, s, e);
+      merged.metrics = d.metrics;
+      for (const k of ['received', 'opened', 'clicked', 'subscribed', 'unsubscribed', 'revenue']) {
+        if (d[k]) merged[k] = { ...(merged[k] || {}), ...d[k] };
+        else if (k === 'revenue' && d.revenueError) merged.revenueError = d.revenueError;
+      }
+      merged.revenueAttributed = merged.revenueAttributed || d.revenueAttributed;
+      await sleep(1100);
+    }
+    return merged;
+  }
+  return klaviyoDailyChunk(acct, start, end);
+}
+
+async function klaviyoDailyChunk(acct, start, end) {
   const ids = await klaviyoMetricIds(acct);
   const endEx = dayAfter(end);
   const series = (j, measurement, pickDim) => {
@@ -267,13 +299,18 @@ async function klaviyoCampaigns(acct, start, end) {
   const ids = await klaviyoMetricIds(acct);
   const convId = ids.order || ids.opened || ids.received;
   if (!convId) return { campaigns: [] };
-  const report = await klaviyo(acct, 'campaign-values-reports/', { data: { type: 'campaign-values-report', attributes: {
-    statistics: ['recipients', 'delivered', 'opens_unique', 'open_rate', 'clicks_unique', 'click_rate', 'unsubscribes', 'conversion_value'],
-    timeframe: { start: `${start}T00:00:00+00:00`, end: `${dayAfter(end)}T00:00:00+00:00` },
-    conversion_metric_id: convId,
-    filter: 'equals(send_channel,"email")'
-  } } });
-  const results = report.data?.attributes?.results || [];
+  const results = [];
+  const parts = yearChunks(start, end);
+  for (const [i, [s, e]] of parts.entries()) {
+    if (i) await sleep(1100);   // campaign reports are limited to about one per second
+    const report = await klaviyo(acct, 'campaign-values-reports/', { data: { type: 'campaign-values-report', attributes: {
+      statistics: ['recipients', 'delivered', 'opens_unique', 'open_rate', 'clicks_unique', 'click_rate', 'unsubscribes', 'conversion_value'],
+      timeframe: { start: `${s}T00:00:00+00:00`, end: `${dayAfter(e)}T00:00:00+00:00` },
+      conversion_metric_id: convId,
+      filter: 'equals(send_channel,"email")'
+    } } });
+    results.push(...(report.data?.attributes?.results || []));
+  }
   const byCampaign = new Map();
   results.forEach(r => {
     const id = r.groupings?.campaign_id; if (!id) return;
@@ -309,7 +346,8 @@ const cdnJson = (body) => new Response(JSON.stringify(body), { status: 200, head
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
   'Netlify-CDN-Cache-Control': 'public, durable, s-maxage=3600, stale-while-revalidate=86400',
-  'Netlify-Vary': 'header=x-dashboard-key'
+  // Cache each distinct request separately (action, brand and dates), per password.
+  'Netlify-Vary': 'query=action|brand|start|end,header=x-dashboard-key'
 } });
 
 export default async (req) => {
