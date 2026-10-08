@@ -312,7 +312,8 @@ const cdnJson = (body) => new Response(JSON.stringify(body), { status: 200, head
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
   'Netlify-CDN-Cache-Control': 'public, durable, s-maxage=3600, stale-while-revalidate=86400',
-  'Netlify-Vary': 'header=x-dashboard-key'
+  // Cache each distinct request separately (action, brand and dates), per password.
+  'Netlify-Vary': 'query=action|brand|start|end,header=x-dashboard-key'
 } });
 
 export default async (req) => {
