@@ -160,7 +160,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <button class="tab active" data-tab="ga" aria-current="page">Web analytics</button>
   <button class="tab" data-tab="gsc">Search Console</button>
   <button class="tab" data-tab="social">Social</button>
-  <button class="tab" disabled>Newsletter<small>coming next</small></button>
+  <button class="tab" data-tab="newsletter">Newsletter</button>
 </nav>
 
 <main>
@@ -184,6 +184,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlGscView" hidden><span>View</span><select id="selGscView"></select></label>
       <label class="ctl" id="ctlSocView" hidden><span>Brand</span><select id="selSocView"></select></label>
       <label class="ctl" id="ctlSocChannel" hidden><span>Channel</span><select id="selSocChannel"></select></label>
+      <label class="ctl" id="ctlNlBrand" hidden><span>Brand</span><select id="selNlBrand"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
           <button data-days="7">7 days</button>
@@ -286,6 +287,52 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         </div>
       </div>
       <p class="footnote" id="detailNote" hidden>Pick a single site under View to see pages, landing pages, sources and key events.</p>
+    </div>
+
+    <!-- ===== Newsletter ===== -->
+    <div id="nlContent" hidden>
+      <div class="kpis" id="nKpis"></div>
+      <p class="footnote" id="nNote"></p>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Trend</h2>
+          <span class="sub" id="nTrendSub"></span>
+          <div class="tools">
+            <div class="seg small" id="nSegMetric">
+              <button data-m="revenue">Revenue</button>
+              <button data-m="received">Delivered</button>
+              <button data-m="opened">Opens</button>
+              <button data-m="clicked">Clicks</button>
+              <button data-m="subscribed">New subscribers</button>
+            </div>
+          </div>
+        </div>
+        <div class="chartbox"><canvas id="nTrendChart" aria-label="Newsletter trend chart"></canvas></div>
+      </section>
+
+      <section class="panel" id="nPanelBrands">
+        <div class="ph">
+          <h2 class="bar">Brands</h2>
+          <span class="sub">Select a row to open that brand</span>
+          <div class="tools"><button class="mini" data-csv="nBrands">Download CSV</button></div>
+        </div>
+        <div class="tw" id="nTblBrands"></div>
+      </section>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Campaigns</h2>
+          <span class="sub">Sent in this period, newest first</span>
+          <div class="tools"><button class="mini" data-csv="nCampaigns">Download CSV</button></div>
+        </div>
+        <div class="tw" id="nTblCampaigns"></div>
+      </section>
+
+      <section class="panel">
+        <div class="ph"><h2 class="bar">Lists</h2><span class="sub">Current size</span></div>
+        <div id="nLstLists"></div>
+      </section>
     </div>
 
     <!-- ===== Social ===== -->
@@ -483,6 +530,9 @@ const state = {
   social: null,
   socBrand: LS.get('socBrand', 'all'),
   socChannel: LS.get('socChannel', 'all'),
+  nlBrands: null,
+  nlBrand: LS.get('nlBrand', 'all'),
+  nMetric: 'revenue',
   sMetric: 'reach',
   metric: 'activeUsers',
   cache: new Map(),
@@ -605,20 +655,21 @@ const derive = (t) => t && ({ ...t,
 let loadSeq = 0;
 function load(){
   syncTabUI();
-  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : loadGa();
+  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : loadGa();
 }
 
 function syncTabUI(){
-  const gsc = state.tab === 'gsc', soc = state.tab === 'social', ga = !gsc && !soc;
+  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', ga = !gsc && !soc && !nl;
   document.querySelectorAll('.tab[data-tab]').forEach(b => {
     const on = b.dataset.tab === state.tab;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl;
   if (!ga) $('content').hidden = true;
   if (!gsc) $('gscContent').hidden = true;
   if (!soc) $('socContent').hidden = true;
+  if (!nl) $('nlContent').hidden = true;
 }
 
 async function loadGa(){
@@ -1144,6 +1195,222 @@ function renderSocTrend(){
   });
 }
 
+/* =====================================================================
+   NEWSLETTER (Klaviyo, one account per brand)
+   ===================================================================== */
+const EUR = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const fEur = (v) => v == null ? '–' : EUR.format(v);
+
+async function nlFetch(action, brand, params){
+  const key = `nl|${action}|${brand}|${JSON.stringify(params || {})}`;
+  if (state.cache.has(key)) return state.cache.get(key);
+  const v = await api(action, { brand, ...(params || {}) });
+  state.cache.set(key, v);
+  return v;
+}
+
+async function nlBrandData(brand, R){
+  const cur = { start: iso(R.cur.start), end: iso(R.cur.end) };
+  const prev = R.prev ? { start: iso(R.prev.start), end: iso(R.prev.end) } : null;
+  // One campaign report covers both periods (Klaviyo only allows a few of these per minute).
+  const wStart = prev && daysBetween(R.prev.start, R.cur.end) <= 365 ? prev.start : cur.start;
+  const [dCur, dPrev, camp, lists] = [
+    await nlFetch('klaviyo_daily', brand, cur),
+    prev ? await nlFetch('klaviyo_daily', brand, prev) : null,
+    await nlFetch('klaviyo_campaigns', brand, { start: wStart, end: cur.end }).then(c => ({ ...c, windowFromPrev: !!prev && wStart === prev.start })).catch(e => { if (e instanceof AuthError) throw e; return { error: e.message, campaigns: [] }; }),
+    await nlFetch('klaviyo_lists', brand).catch(e => { if (e instanceof AuthError) throw e; return { error: e.message, lists: [] }; })
+  ];
+  return { brand, dCur, dPrev, camp, lists };
+}
+
+function buildNlSelect(){
+  const b = state.nlBrands || [];
+  if (state.nlBrand !== 'all' && !b.includes(state.nlBrand)) state.nlBrand = 'all';
+  $('selNlBrand').innerHTML = (b.length > 1 ? '<option value="all">All brands</option>' : '') + b.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  if (b.length === 1) state.nlBrand = b[0];
+  $('selNlBrand').value = state.nlBrand;
+}
+
+async function loadNewsletter(){
+  const seq = ++loadSeq;
+  const R = getRanges(1);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('nlContent').classList.add('dim');
+  try {
+    if (!state.nlBrands){
+      setStatus('Loading Klaviyo accounts…');
+      state.nlBrands = (await api('klaviyo_accounts')).brands || [];
+      buildNlSelect();
+    }
+    if (seq !== loadSeq) return;
+    if (!state.nlBrands.length){
+      $('nlContent').hidden = true;
+      showAlert('Klaviyo is not connected yet. Add KLAVIYO_ACCOUNTS in Netlify (one line per brand, like "feelfood: pk_..."), then redeploy.');
+      return;
+    }
+    const targets = state.nlBrand === 'all' ? state.nlBrands : [state.nlBrand];
+    setStatus(targets.length > 1 ? `Loading ${targets.length} Klaviyo accounts…` : `Loading ${targets[0]}…`);
+    const results = await pool(targets, 2, b => nlBrandData(b, R),
+      done => { if (seq === loadSeq && targets.length > 1) setStatus(`Loading Klaviyo accounts… ${done} of ${targets.length}`); });
+    if (seq !== loadSeq) return;
+    const authFail = results.find(r => !r.ok && r.e instanceof AuthError);
+    if (authFail) throw authFail.e;
+    const ok = results.filter(r => r.ok).map(r => r.v);
+    const failed = results.map((r, i) => r.ok ? null : { name: targets[i], msg: r.e.message }).filter(Boolean);
+    ok.forEach(d => { if (d.camp.error) failed.push({ name: d.brand + ' (campaigns)', msg: d.camp.error }); if (d.lists.error) failed.push({ name: d.brand + ' (lists)', msg: d.lists.error }); });
+    if (!ok.length){ $('nlContent').hidden = true; showAlert(`Could not load Klaviyo data:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`); return; }
+    $('nlContent').hidden = false;
+    renderNewsletter(ok, R);
+    if (failed.length) showAlert(`Some Klaviyo data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
+    $('nlContent').hidden = true;
+    showAlert(esc(e.message));
+  } finally {
+    if (seq === loadSeq){ setStatus(''); $('nlContent').classList.remove('dim'); }
+  }
+}
+
+const NL_KEYS = ['received','opened','clicked','subscribed','unsubscribed','revenue'];
+function nlTotals(d){
+  const t = { hasRevenue: false };
+  NL_KEYS.forEach(k => { t[k] = 0; });
+  if (!d) return t;
+  NL_KEYS.forEach(k => { if (d[k]) { t[k] = Object.values(d[k]).reduce((a, b) => a + b, 0); if (k === 'revenue') t.hasRevenue = true; } });
+  t.openRate = t.received ? t.opened / t.received : 0;
+  t.clickRate = t.received ? t.clicked / t.received : 0;
+  return t;
+}
+function nlSum(list){
+  const t = { hasRevenue: false };
+  NL_KEYS.forEach(k => { t[k] = list.reduce((s, x) => s + (x[k] || 0), 0); });
+  t.hasRevenue = list.some(x => x.hasRevenue);
+  t.openRate = t.received ? t.opened / t.received : 0;
+  t.clickRate = t.received ? t.clicked / t.received : 0;
+  return t;
+}
+
+function campRates(camps, from, to){
+  const c = (camps || []).filter(x => x.sent && x.sent >= from && x.sent <= to);
+  const del = c.reduce((s, x) => s + (x.delivered || 0), 0);
+  return { n: c.length, delivered: del, opens: c.reduce((s, x) => s + (x.opens || 0), 0), clicks: c.reduce((s, x) => s + (x.clicks || 0), 0),
+    openRate: del ? c.reduce((s, x) => s + (x.opens || 0), 0) / del : null, clickRate: del ? c.reduce((s, x) => s + (x.clicks || 0), 0) / del : null };
+}
+function mergeRates(list){
+  const del = list.reduce((s, x) => s + x.delivered, 0);
+  return { n: list.reduce((s, x) => s + x.n, 0), delivered: del, openRate: del ? list.reduce((s, x) => s + x.opens, 0) / del : null, clickRate: del ? list.reduce((s, x) => s + x.clicks, 0) / del : null };
+}
+
+function renderNewsletter(results, R){
+  const ci0 = [iso(R.cur.start), iso(R.cur.end)], pi0 = R.prev ? [iso(R.prev.start), iso(R.prev.end)] : null;
+  const per = results.map(r => ({ brand: r.brand, cur: nlTotals(r.dCur), prev: R.prev ? nlTotals(r.dPrev) : null,
+    rc: campRates(r.camp.campaigns, ci0[0], ci0[1]),
+    rp: pi0 && r.camp.windowFromPrev ? campRates(r.camp.campaigns, pi0[0], pi0[1]) : null,
+    subscribers: r.lists.lists?.[0]?.profiles ?? null, mainList: r.lists.lists?.[0]?.name || null }));
+  const cur = nlSum(per.map(p => p.cur)), prev = R.prev ? nlSum(per.map(p => p.prev)) : null;
+  const rc = mergeRates(per.map(p => p.rc));
+  const rpList = per.map(p => p.rp).filter(Boolean);
+  const rp = rpList.length === per.length ? mergeRates(rpList) : null;
+  const rateD = (a, b) => a != null && b != null ? delta(a, b, true) : null;
+  const subs = per.filter(p => p.subscribers != null);
+  const kpis = [
+    { label: 'Emails delivered', v: fNum(cur.received), d: prev && delta(cur.received, prev.received) },
+    { label: 'Open rate (campaigns)', v: rc.openRate == null ? '–' : fPct(rc.openRate), d: rp && rateD(rc.openRate, rp.openRate) },
+    { label: 'Click rate (campaigns)', v: rc.clickRate == null ? '–' : fPct(rc.clickRate), d: rp && rateD(rc.clickRate, rp.clickRate) },
+    { label: 'Revenue from email', v: cur.hasRevenue ? fEur(cur.revenue) : '–', d: prev && cur.hasRevenue ? delta(cur.revenue, prev.revenue) : null },
+    { label: 'New subscribers', v: fNum(cur.subscribed), d: prev && delta(cur.subscribed, prev.subscribed) },
+    { label: 'Unsubscribes', v: fNum(cur.unsubscribed), d: prev && (() => { const d = delta(cur.unsubscribed, prev.unsubscribed); if (d && d.cls !== 'flat') d.cls = d.cls === 'up' ? 'down' : 'up'; return d; })() },
+    { label: per.length > 1 ? 'Subscribers (main lists)' : `Subscribers${per[0].mainList ? ' · ' + per[0].mainList : ''}`, v: subs.length ? fNum(subs.reduce((s, p) => s + p.subscribers, 0)) : '–', d: null }
+  ];
+  $('nKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}</div>`).join('');
+  const notes = [`Open and click rates are unique opens and clicks per delivered email, for the ${rc.n} campaign${rc.n === 1 ? '' : 's'} sent in this period. Opens include automatic opens from Apple Mail privacy protection, so treat them as a trend.`];
+  if (cur.hasRevenue) notes.push('Revenue is orders Klaviyo attributes to email (campaigns and flows).');
+  else notes.push('No revenue shown: none of the selected Klaviyo accounts has a "Placed Order" metric from a connected shop.');
+  if (per.length > 1) notes.push('Subscribers counts the largest list per brand.');
+  $('nNote').textContent = notes.join(' ');
+
+  state.lastNl = { results, R };
+  renderNlTrend();
+
+  // Brands table
+  const single = results.length < 2;
+  $('nPanelBrands').hidden = single;
+  if (!single){
+    const rows = per.map(p => ({ brand: p.brand, subscribers: p.subscribers, received: p.cur.received, openRate: p.rc.openRate, clickRate: p.rc.clickRate,
+      revenue: p.cur.hasRevenue ? p.cur.revenue : null, dRev: p.prev && p.cur.hasRevenue ? delta(p.cur.revenue, p.prev.revenue) : null,
+      subscribed: p.cur.subscribed, unsubscribed: p.cur.unsubscribed })).sort((a, b) => (b.revenue || 0) - (a.revenue || 0) || b.received - a.received);
+    const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
+    $('nTblBrands').innerHTML = `<table><thead><tr><th>Brand</th><th class="n">Subscribers</th><th class="n">Delivered</th><th class="n">Campaign open rate</th><th class="n">Campaign click rate</th><th class="n">Revenue</th><th class="n">New subs</th><th class="n">Unsubs</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="click" data-brand="${esc(r.brand)}" tabindex="0"><td><b>${esc(r.brand)}</b></td>
+      <td class="n">${r.subscribers == null ? '–' : fNum(r.subscribers)}</td><td class="n">${fNum(r.received)}</td>
+      <td class="n">${r.openRate == null ? '–' : fPct(r.openRate)}</td><td class="n">${r.clickRate == null ? '–' : fPct(r.clickRate)}</td>
+      <td class="n">${fEur(r.revenue)}${dl(r.dRev)}</td><td class="n">${fNum(r.subscribed)}</td><td class="n">${fNum(r.unsubscribed)}</td></tr>`).join('')}</tbody></table>`;
+    state.csv.nBrands = { name: 'newsletter-brands', cols: ['brand','subscribers','received','openRate','clickRate','revenue','subscribed','unsubscribed'], rows };
+  }
+
+  // Campaigns sent in the current period
+  const ci = [iso(R.cur.start), iso(R.cur.end)];
+  const camps = results.flatMap(r => (r.camp.campaigns || []).filter(c => c.sent && c.sent >= ci[0] && c.sent <= ci[1])
+    .map(c => ({ ...c, brand: r.brand, hasRevenue: r.camp.hasRevenue,
+      openRate: c.delivered ? c.opens / c.delivered : 0, clickRate: c.delivered ? c.clicks / c.delivered : 0 })))
+    .sort((a, b) => b.sent.localeCompare(a.sent));
+  const cols = [{ k: 'name', label: 'Campaign' }]
+    .concat(results.length > 1 ? [{ k: 'brand', label: 'Brand' }] : [])
+    .concat([{ k: 'sent', label: 'Sent' },
+      { k: 'recipients', label: 'Recipients', n: 1, f: fNum }, { k: 'openRate', label: 'Open rate', n: 1, f: fPct },
+      { k: 'clickRate', label: 'Click rate', n: 1, f: fPct }, { k: 'unsubscribes', label: 'Unsubs', n: 1, f: fNum },
+      { k: 'revenue', label: 'Revenue', n: 1, f: fEur, calc: r => r.hasRevenue ? r.revenue : null }]);
+  table('nTblCampaigns', cols, camps.map(c => ({ ...c, sent: fDate(parseISO(c.sent), true) })), 'nCampaigns');
+
+  // Lists
+  const lists = results.flatMap(r => (r.lists.lists || []).filter(l => l.profiles != null)
+    .slice(0, results.length > 1 ? 1 : 4).map(l => ({ name: results.length > 1 ? `${r.brand} · ${l.name}` : l.name, profiles: l.profiles })))
+    .sort((a, b) => b.profiles - a.profiles);
+  if (lists.length) renderBars('nLstLists', lists, 'name', 'profiles');
+  else $('nLstLists').innerHTML = '<p class="empty">No list sizes available.</p>';
+}
+
+function renderNlTrend(){
+  const { results, R } = state.lastNl || {};
+  if (!results) return;
+  const m = state.nMetric;
+  document.querySelectorAll('#nSegMetric button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  const toIso = (d) => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  const curDates = dateList(R.cur).map(toIso), prevDates = R.prev ? dateList(R.prev).map(toIso) : [];
+  const sumDay = (part, d) => d == null ? null : results.reduce((s, r) => s + ((r[part] && r[part][m] && r[part][m][d]) || 0), 0);
+  let cv = curDates.map(d => sumDay('dCur', d)), pv = curDates.map((_, i) => R.prev ? sumDay('dPrev', prevDates[i] ?? null) : null);
+  const weekly = R.days > 120, step = weekly ? 7 : 1;
+  if (weekly){
+    const b = (arr) => { const o = []; for (let i = 0; i < arr.length; i += 7){ const s = arr.slice(i, i + 7).filter(v => v != null); o.push(s.length ? s.reduce((a, x) => a + x, 0) : null); } return o; };
+    cv = b(cv); pv = b(pv);
+  }
+  const idx = curDates.map((_, i) => i).filter(i => i % step === 0);
+  const labels = idx.map(i => fDate(parseISO(curDates[i])));
+  const tips = idx.map(i => weekly ? `Week from ${fDate(parseISO(curDates[i]), true)}` : fDate(parseISO(curDates[i]), true) + (prevDates[i] ? ` vs ${fDate(parseISO(prevDates[i]), true)}` : ''));
+  $('nTrendSub').textContent = weekly ? 'Weekly' : 'Daily';
+  const fmt = (v) => v == null ? '–' : m === 'revenue' ? fEur(v) : fNum(v);
+  const ds = [{ label: 'This period', data: cv, borderColor: '#D6001C', backgroundColor: 'rgba(214,0,28,.08)', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: .25, fill: true }];
+  if (R.prev) ds.push({ label: state.compare === 'yoy' ? 'Last year' : 'Previous period', data: pv, borderColor: '#000', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 3, tension: .25, fill: false });
+  if (state.nChart) state.nChart.destroy();
+  if (!window.Chart) return;
+  state.nChart = new Chart($('nTrendChart'), {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 18, boxHeight: 2, color: '#000' } },
+        tooltip: { backgroundColor: '#000', titleFont: { weight: 700 }, padding: 10, cornerRadius: 0,
+          callbacks: { title: (it) => tips[it[0].dataIndex], label: (c) => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 18 }, border: { color: '#000' } },
+        y: { beginAtZero: true, grid: { color: '#ececec' }, border: { display: false }, ticks: { callback: (v) => m === 'revenue' ? EUR.format(v) : NF.format(v) } }
+      }
+    }
+  });
+}
+
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
 function showAlert(html){ $('alert').innerHTML = html; $('alert').hidden = false; }
 
@@ -1422,13 +1689,20 @@ function bindUI(){
     state.range = { from: f, to: t }; LS.set('range', state.range); load();
   };
   $('selCompare').onchange = () => { state.compare = $('selCompare').value; LS.set('compare', state.compare); load(); };
-  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; load(); };
+  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; load(); };
 
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => {
     if (state.tab === b.dataset.tab) return;
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
   $('selSocView').onchange = () => { state.socBrand = $('selSocView').value; LS.set('socBrand', state.socBrand); buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); };
+  $('selNlBrand').onchange = () => { state.nlBrand = $('selNlBrand').value; LS.set('nlBrand', state.nlBrand); load(); };
+  $('nSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.nMetric = b.dataset.m; renderNlTrend(); };
+  $('nTblBrands').onclick = (e) => {
+    const tr = e.target.closest('tr[data-brand]');
+    if (tr){ state.nlBrand = tr.dataset.brand; LS.set('nlBrand', state.nlBrand); $('selNlBrand').value = state.nlBrand; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  };
+  $('nTblBrands').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-brand]')) e.target.click(); };
   $('selSocChannel').onchange = () => { state.socChannel = $('selSocChannel').value; LS.set('socChannel', state.socChannel); load(); };
   $('sSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.sMetric = b.dataset.m; renderSocTrend(); };
   $('sTblAccounts').onclick = (e) => {

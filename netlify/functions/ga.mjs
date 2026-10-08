@@ -157,6 +157,161 @@ function parseSocial(values) {
   return { rows, firstDate: rows[0]?.date || null, lastDate: rows[rows.length - 1]?.date || null };
 }
 
+
+// ---------- Klaviyo (one private read-only key per brand) ----------
+// KLAVIYO_ACCOUNTS: one brand per line (or separated by ;) as  Brand name: pk_xxxxxxxx
+const KLAVIYO_REVISION = '2024-10-15';
+function klaviyoAccounts() {
+  return (process.env.KLAVIYO_ACCOUNTS || '').split(/[\n;]+/).map(s => s.trim()).filter(Boolean).map(s => {
+    const i = s.search(/[:=]/);
+    return i > 0 ? { brand: s.slice(0, i).trim(), key: s.slice(i + 1).trim() } : null;
+  }).filter(a => a && a.brand && a.key);
+}
+function klaviyoAccount(brand) {
+  const accts = klaviyoAccounts();
+  if (!accts.length) throw fail('Klaviyo is not connected yet. Add KLAVIYO_ACCOUNTS in Netlify (one line per brand, like "feelfood: pk_..."), then redeploy.');
+  const a = accts.find(x => x.brand === brand);
+  if (!a) throw fail(`No Klaviyo key found for "${brand}".`, 400);
+  return a;
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function klaviyo(acct, path, body, tries = 3) {
+  const url = path.startsWith('http') ? path : `https://a.klaviyo.com/api/${path}`;
+  for (let attempt = 1; ; attempt++) {
+    const r = await fetch(url, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Klaviyo-API-Key ${acct.key}`, revision: KLAVIYO_REVISION, accept: 'application/vnd.api+json', 'content-type': 'application/vnd.api+json' },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (r.status === 429 && attempt < tries) { await sleep(Math.min(5000, Number(r.headers.get('retry-after') || 1) * 1000 + 250)); continue; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = j.errors?.[0]?.detail || j.errors?.[0]?.title || `Klaviyo returned an error (${r.status}).`;
+      if (r.status === 401 || r.status === 403) throw fail(`Klaviyo (${acct.brand}) refused the API key: ${msg} Check that it is a private key with read access.`, 502);
+      if (r.status === 429) throw fail(`Klaviyo (${acct.brand}) is limiting requests right now. Wait a minute and click Refresh.`, 503);
+      throw fail(`Klaviyo (${acct.brand}): ${msg}`, r.status >= 500 ? 502 : 400);
+    }
+    return j;
+  }
+}
+async function klaviyoAll(acct, path, maxPages = 5) {
+  const out = []; let next = path, n = 0;
+  while (next && n++ < maxPages) { const j = await klaviyo(acct, next); out.push(...(j.data || [])); next = j.links?.next || null; }
+  return out;
+}
+const METRIC_NAMES = {
+  received: ['received email'], opened: ['opened email'], clicked: ['clicked email'],
+  subscribed: ['subscribed to email marketing', 'subscribed to list'],
+  unsubscribed: ['unsubscribed from email marketing', 'unsubscribed', 'unsubscribed from list'],
+  order: ['placed order']
+};
+async function klaviyoMetricIds(acct) {
+  const all = await klaviyoAll(acct, 'metrics/?fields[metric]=name,integration', 10);
+  const ids = {};
+  for (const [k, names] of Object.entries(METRIC_NAMES)) {
+    for (const n of names) {
+      const hits = all.filter(m => (m.attributes?.name || '').toLowerCase() === n);
+      const pick = hits.find(m => (m.attributes?.integration?.name || '').toLowerCase() === 'klaviyo') || hits[0];
+      if (pick) { ids[k] = pick.id; break; }
+    }
+  }
+  return ids;
+}
+function aggBody(metricId, measurement, start, endExcl, by) {
+  return { data: { type: 'metric-aggregate', attributes: {
+    metric_id: metricId, measurements: [measurement], interval: 'day', page_size: 500, timezone: 'Europe/Vienna',
+    filter: [`greater-or-equal(datetime,${start}T00:00:00)`, `less-than(datetime,${endExcl}T00:00:00)`],
+    ...(by ? { by } : {}) } } };
+}
+const isoDay = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? s : null;
+const dayAfter = (s) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
+
+async function klaviyoDaily(acct, start, end) {
+  const ids = await klaviyoMetricIds(acct);
+  const endEx = dayAfter(end);
+  const series = (j, measurement, pickDim) => {
+    const a = j.data?.attributes || {};
+    const dates = (a.dates || []).map(d => String(d).slice(0, 10));
+    const rows = a.data || [];
+    const vals = dates.map(() => 0);
+    rows.forEach(row => {
+      if (pickDim && !pickDim(row.dimensions || [])) return;
+      (row.measurements?.[measurement] || []).forEach((v, i) => { vals[i] += Number(v) || 0; });
+    });
+    return Object.fromEntries(dates.map((d, i) => [d, vals[i]]));
+  };
+  const jobs = [
+    ['received', 'count'], ['opened', 'unique'], ['clicked', 'unique'], ['subscribed', 'count'], ['unsubscribed', 'count']
+  ].filter(([k]) => ids[k]);
+  const out = { metrics: Object.keys(ids) };
+  // Klaviyo allows ~3 aggregate requests per second, so run them in small batches.
+  for (let i = 0; i < jobs.length; i += 3) {
+    const batch = jobs.slice(i, i + 3);
+    const res = await Promise.all(batch.map(([k, m]) => klaviyo(acct, 'metric-aggregates/', aggBody(ids[k], m, start, endEx))));
+    batch.forEach(([k, m], n) => { out[k] = series(res[n], m); });
+    if (i + 3 < jobs.length) await sleep(1100);
+  }
+  out.revenueAttributed = false;
+  if (ids.order) {
+    await sleep(400);
+    try {
+      const j = await klaviyo(acct, 'metric-aggregates/', aggBody(ids.order, 'sum_value', start, endEx, ['$attributed_channel']));
+      out.revenue = series(j, 'sum_value', dims => (dims[0] || '').toLowerCase() === 'email');
+      out.revenueAttributed = true;
+    } catch (e) { out.revenue = null; out.revenueError = e.message; }
+  }
+  return out;
+}
+
+async function klaviyoCampaigns(acct, start, end) {
+  const ids = await klaviyoMetricIds(acct);
+  const convId = ids.order || ids.opened || ids.received;
+  if (!convId) return { campaigns: [] };
+  const report = await klaviyo(acct, 'campaign-values-reports/', { data: { type: 'campaign-values-report', attributes: {
+    statistics: ['recipients', 'delivered', 'opens_unique', 'open_rate', 'clicks_unique', 'click_rate', 'unsubscribes', 'conversion_value'],
+    timeframe: { start: `${start}T00:00:00+00:00`, end: `${dayAfter(end)}T00:00:00+00:00` },
+    conversion_metric_id: convId,
+    filter: 'equals(send_channel,"email")'
+  } } });
+  const results = report.data?.attributes?.results || [];
+  const byCampaign = new Map();
+  results.forEach(r => {
+    const id = r.groupings?.campaign_id; if (!id) return;
+    const s = r.statistics || {}, cur = byCampaign.get(id) || { recipients: 0, delivered: 0, opens: 0, clicks: 0, unsubscribes: 0, revenue: 0 };
+    cur.recipients += s.recipients || 0; cur.delivered += s.delivered || 0; cur.opens += s.opens_unique || 0;
+    cur.clicks += s.clicks_unique || 0; cur.unsubscribes += s.unsubscribes || 0; cur.revenue += ids.order ? (s.conversion_value || 0) : 0;
+    byCampaign.set(id, cur);
+  });
+  const meta = new Map();
+  if (byCampaign.size) {
+    const list = await klaviyoAll(acct, `campaigns/?filter=${encodeURIComponent("equals(messages.channel,'email')")}&fields[campaign]=name,send_time,scheduled_at&sort=-scheduled_at`, 6);
+    list.forEach(c => meta.set(c.id, c.attributes || {}));
+  }
+  return { hasRevenue: !!ids.order, campaigns: [...byCampaign.entries()].map(([id, s]) => ({
+    id, name: meta.get(id)?.name || id, sent: (meta.get(id)?.send_time || meta.get(id)?.scheduled_at || '').slice(0, 10), ...s })) };
+}
+
+async function klaviyoLists(acct) {
+  const lists = await klaviyoAll(acct, 'lists/?fields[list]=name', 3);
+  const rank = (n) => /newsletter|master|main|subscri/i.test(n) ? 0 : 1;
+  const picks = lists.map(l => ({ id: l.id, name: l.attributes?.name || l.id }))
+    .sort((a, b) => rank(a.name) - rank(b.name)).slice(0, 4);
+  const out = [];
+  for (const l of picks) {   // this endpoint allows about 1 request per second
+    const j = await klaviyo(acct, `lists/${l.id}/?additional-fields[list]=profile_count&fields[list]=name,profile_count`);
+    out.push({ name: l.name, profiles: j.data?.attributes?.profile_count ?? null });
+    if (out.length < picks.length) await sleep(1050);
+  }
+  return { lists: out.sort((a, b) => (b.profiles || 0) - (a.profiles || 0)), totalLists: lists.length };
+}
+
+const cdnJson = (body) => new Response(JSON.stringify(body), { status: 200, headers: {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store',
+  'Netlify-CDN-Cache-Control': 'public, durable, s-maxage=3600, stale-while-revalidate=86400',
+  'Netlify-Vary': 'header=x-dashboard-key'
+} });
+
 export default async (req) => {
   if (!authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
@@ -206,6 +361,16 @@ export default async (req) => {
         out.rows.sort((a, b) => a.date.localeCompare(b.date));
       }
       return json(200, out);
+    }
+    if (action === 'klaviyo_accounts') {
+      return json(200, { brands: klaviyoAccounts().map(a => a.brand) });
+    }
+    if (action === 'klaviyo_daily' || action === 'klaviyo_campaigns' || action === 'klaviyo_lists') {
+      const acct = klaviyoAccount(url.searchParams.get('brand') || '');
+      if (action === 'klaviyo_lists') return cdnJson(await klaviyoLists(acct));
+      const start = isoDay(url.searchParams.get('start')), end = isoDay(url.searchParams.get('end'));
+      if (!start || !end || start > end) return json(400, { error: 'Invalid date range.' });
+      return cdnJson(action === 'klaviyo_daily' ? await klaviyoDaily(acct, start, end) : await klaviyoCampaigns(acct, start, end));
     }
     if (action === 'gsc_sites') {
       return json(200, await google('https://www.googleapis.com/webmasters/v3/sites'));
