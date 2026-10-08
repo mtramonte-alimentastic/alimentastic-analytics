@@ -1272,7 +1272,7 @@ async function loadNewsletter(){
   }
 }
 
-const NL_KEYS = ['received','opened','clicked','subscribed','unsubscribed','revenue'];
+const NL_KEYS = ['received','opened','clicked','subscribed','unsubscribed','revenue','revenueFlows','revenueCampaigns'];
 function nlTotals(d){
   const t = { hasRevenue: false };
   NL_KEYS.forEach(k => { t[k] = 0; });
@@ -1318,14 +1318,15 @@ function renderNewsletter(results, R){
     { label: 'Emails delivered', v: fNum(cur.received), d: prev && delta(cur.received, prev.received) },
     { label: 'Open rate (campaigns)', v: rc.openRate == null ? '–' : fPct(rc.openRate), d: rp && rateD(rc.openRate, rp.openRate) },
     { label: 'Click rate (campaigns)', v: rc.clickRate == null ? '–' : fPct(rc.clickRate), d: rp && rateD(rc.clickRate, rp.clickRate) },
-    { label: 'Revenue from email', v: cur.hasRevenue ? fEur(cur.revenue) : '–', d: prev && cur.hasRevenue ? delta(cur.revenue, prev.revenue) : null },
+    { label: 'Revenue from email', v: cur.hasRevenue ? fEur(cur.revenue) : '–', d: prev && cur.hasRevenue ? delta(cur.revenue, prev.revenue) : null,
+      sub: cur.hasRevenue && (cur.revenueFlows || cur.revenueCampaigns) ? `Flows ${fEur(cur.revenueFlows)} · Campaigns ${fEur(cur.revenueCampaigns)}` : '' },
     { label: 'New subscribers', v: fNum(cur.subscribed), d: prev && delta(cur.subscribed, prev.subscribed) },
     { label: 'Unsubscribes', v: fNum(cur.unsubscribed), d: prev && (() => { const d = delta(cur.unsubscribed, prev.unsubscribed); if (d && d.cls !== 'flat') d.cls = d.cls === 'up' ? 'down' : 'up'; return d; })() },
     { label: per.length > 1 ? 'Subscribers (main lists)' : `Subscribers${per[0].mainList ? ' · ' + per[0].mainList : ''}`, v: subs.length ? fNum(subs.reduce((s, p) => s + p.subscribers, 0)) : '–', d: null }
   ];
-  $('nKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}</div>`).join('');
+  $('nKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}${k.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(k.sub)}</div>` : ''}</div>`).join('');
   const notes = [`Open and click rates are unique opens and clicks per delivered email, for the ${rc.n} campaign${rc.n === 1 ? '' : 's'} sent in this period. Opens include automatic opens from Apple Mail privacy protection, so treat them as a trend.`];
-  if (cur.hasRevenue) notes.push('Revenue is orders Klaviyo attributes to email (campaigns and flows).');
+  if (cur.hasRevenue) notes.push('Revenue is orders Klaviyo attributes to a flow or campaign, matching "Attributed revenue" in Klaviyo.');
   else notes.push('No revenue shown: none of the selected Klaviyo accounts has a "Placed Order" metric from a connected shop.');
   if (per.length > 1) notes.push('Subscribers counts the largest list per brand.');
   $('nNote').textContent = notes.join(' ');

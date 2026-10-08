@@ -214,7 +214,11 @@ async function klaviyoMetricIds(acct) {
   for (const [k, names] of Object.entries(METRIC_NAMES)) {
     for (const n of names) {
       const hits = all.filter(m => (m.attributes?.name || '').toLowerCase() === n);
-      const pick = hits.find(m => (m.attributes?.integration?.name || '').toLowerCase() === 'klaviyo') || hits[0];
+      const integ = (m) => (m.attributes?.integration?.name || '').toLowerCase();
+      const SHOPS = ['shopify', 'woocommerce', 'shopware', 'magento', 'bigcommerce', 'prestashop', 'wix', 'squarespace'];
+      const pick = k === 'order'
+        ? (hits.find(m => SHOPS.some(s => integ(m).includes(s))) || hits.find(m => integ(m) && integ(m) !== 'api') || hits[0])
+        : (hits.find(m => integ(m) === 'klaviyo') || hits[0]);
       if (pick) { ids[k] = pick.id; break; }
     }
   }
@@ -246,7 +250,7 @@ async function klaviyoDaily(acct, start, end) {
     for (const [s, e] of parts) {
       const d = await klaviyoDailyChunk(acct, s, e);
       merged.metrics = d.metrics;
-      for (const k of ['received', 'opened', 'clicked', 'subscribed', 'unsubscribed', 'revenue']) {
+      for (const k of ['received', 'opened', 'clicked', 'subscribed', 'unsubscribed', 'revenue', 'revenueFlows', 'revenueCampaigns']) {
         if (d[k]) merged[k] = { ...(merged[k] || {}), ...d[k] };
         else if (k === 'revenue' && d.revenueError) merged.revenueError = d.revenueError;
       }
@@ -286,11 +290,22 @@ async function klaviyoDailyChunk(acct, start, end) {
   out.revenueAttributed = false;
   if (ids.order) {
     await sleep(400);
+    // Orders Klaviyo attributes to a flow or a campaign message (the same attribution Klaviyo's own dashboard uses).
+    const has = (v) => v != null && String(v).trim() !== '' && String(v).toLowerCase() !== 'none' && String(v).toLowerCase() !== '(not set)';
     try {
-      const j = await klaviyo(acct, 'metric-aggregates/', aggBody(ids.order, 'sum_value', start, endEx, ['$attributed_channel']));
-      out.revenue = series(j, 'sum_value', dims => (dims[0] || '').toLowerCase() === 'email');
+      const j = await klaviyo(acct, 'metric-aggregates/', aggBody(ids.order, 'sum_value', start, endEx, ['$attributed_flow', '$attributed_message']));
+      out.revenueFlows = series(j, 'sum_value', dims => has(dims[0]));
+      out.revenueCampaigns = series(j, 'sum_value', dims => !has(dims[0]) && has(dims[1]));
+      out.revenue = Object.fromEntries(Object.keys(out.revenueFlows).map(d => [d, (out.revenueFlows[d] || 0) + (out.revenueCampaigns[d] || 0)]));
       out.revenueAttributed = true;
-    } catch (e) { out.revenue = null; out.revenueError = e.message; }
+    } catch (e) {
+      try {   // fallback for accounts that only expose the channel
+        await sleep(400);
+        const j = await klaviyo(acct, 'metric-aggregates/', aggBody(ids.order, 'sum_value', start, endEx, ['$attributed_channel']));
+        out.revenue = series(j, 'sum_value', dims => (dims[0] || '').toLowerCase() === 'email');
+        out.revenueAttributed = true;
+      } catch (e2) { out.revenue = null; out.revenueError = e.message; }
+    }
   }
   return out;
 }
@@ -301,14 +316,25 @@ async function klaviyoCampaigns(acct, start, end) {
   if (!convId) return { campaigns: [] };
   const results = [];
   const parts = yearChunks(start, end);
+  let conv = convId, revenueOk = !!ids.order;
   for (const [i, [s, e]] of parts.entries()) {
     if (i) await sleep(1100);   // campaign reports are limited to about one per second
-    const report = await klaviyo(acct, 'campaign-values-reports/', { data: { type: 'campaign-values-report', attributes: {
+    const ask = (metricId) => klaviyo(acct, 'campaign-values-reports/', { data: { type: 'campaign-values-report', attributes: {
       statistics: ['recipients', 'delivered', 'opens_unique', 'open_rate', 'clicks_unique', 'click_rate', 'unsubscribes', 'conversion_value'],
       timeframe: { start: `${s}T00:00:00+00:00`, end: `${dayAfter(e)}T00:00:00+00:00` },
-      conversion_metric_id: convId,
+      conversion_metric_id: metricId,
       filter: 'equals(send_channel,"email")'
     } } });
+    let report;
+    try { report = await ask(conv); }
+    catch (err) {
+      // Some "Placed Order" metrics can't be used for campaign revenue; load campaigns without revenue instead.
+      const fallback = ids.opened || ids.received;
+      if (!/conversion metric/i.test(err.message) || !fallback || conv === fallback) throw err;
+      conv = fallback; revenueOk = false;
+      await sleep(1100);
+      report = await ask(conv);
+    }
     results.push(...(report.data?.attributes?.results || []));
   }
   const byCampaign = new Map();
@@ -316,7 +342,7 @@ async function klaviyoCampaigns(acct, start, end) {
     const id = r.groupings?.campaign_id; if (!id) return;
     const s = r.statistics || {}, cur = byCampaign.get(id) || { recipients: 0, delivered: 0, opens: 0, clicks: 0, unsubscribes: 0, revenue: 0 };
     cur.recipients += s.recipients || 0; cur.delivered += s.delivered || 0; cur.opens += s.opens_unique || 0;
-    cur.clicks += s.clicks_unique || 0; cur.unsubscribes += s.unsubscribes || 0; cur.revenue += ids.order ? (s.conversion_value || 0) : 0;
+    cur.clicks += s.clicks_unique || 0; cur.unsubscribes += s.unsubscribes || 0; cur.revenue += revenueOk ? (s.conversion_value || 0) : 0;
     byCampaign.set(id, cur);
   });
   const meta = new Map();
@@ -324,7 +350,7 @@ async function klaviyoCampaigns(acct, start, end) {
     const list = await klaviyoAll(acct, `campaigns/?filter=${encodeURIComponent("equals(messages.channel,'email')")}&fields[campaign]=name,send_time,scheduled_at&sort=-scheduled_at`, 6);
     list.forEach(c => meta.set(c.id, c.attributes || {}));
   }
-  return { hasRevenue: !!ids.order, campaigns: [...byCampaign.entries()].map(([id, s]) => ({
+  return { hasRevenue: revenueOk, campaigns: [...byCampaign.entries()].map(([id, s]) => ({
     id, name: meta.get(id)?.name || id, sent: (meta.get(id)?.send_time || meta.get(id)?.scheduled_at || '').slice(0, 10), ...s })) };
 }
 
