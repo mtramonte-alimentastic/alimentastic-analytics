@@ -416,6 +416,7 @@ const PCOLS = {
   media_id: ['media_id', 'media id'], caption: ['media_caption', 'media caption'], permalink: ['media_permalink', 'media permalink'],
   mtype: ['media_type', 'media type'], m_reach: ['media_reach', 'media reach'], m_views: ['media_views', 'media views'],
   m_eng: ['media_engagement', 'media engagement'], m_created: ['timestamp', 'media created'],
+  m_url: ['media_url', 'media url'], m_thumb: ['media_thumbnail_url', 'video thumbnail url'],
   share_id: ['share_id', 'share id'], post_id: ['post_id', 'post id'], s_text: ['share_text', 'share text'],
   s_created: ['share_created_time', 'share created time'], s_impr: ['share_impression_count', 'share/post impression count'],
   s_uimpr: ['share_unique_impressions_count', 'share/post unique impressions count'], s_eng: ['share_total_engagements', 'share/post total engagements']
@@ -445,15 +446,21 @@ function parsePosts(values) {
   const ig = new Map(), li = new Map();
   for (const row of values.slice(1)) {
     const account = String(get(row, 'account') ?? '').trim();
+    // Only Instagram and LinkedIn rows belong here; skip leftovers from other setups (e.g. Facebook).
+    const src = norm(get(row, 'datasource'));
+    if (src && !src.includes('instagram') && !src.includes('linkedin')) continue;
     const mid = String(get(row, 'media_id') ?? '').trim();
     const sid = String(get(row, 'share_id') ?? get(row, 'post_id') ?? '').trim();
-    if (mid && mid.toLowerCase() !== 'null') {
+    if (mid && mid.toLowerCase() !== 'null' && /^\d+$/.test(mid) && (!src || src.includes('instagram'))) {
       ig.set(mid, { id: mid, platform: 'instagram', account,
         published: toIsoAny(get(row, 'm_created')) || toIsoDate(get(row, 'date')),
         text: String(get(row, 'caption') ?? '').replace(/\s+/g, ' ').trim(), url: String(get(row, 'permalink') ?? '').trim() || null,
         type: String(get(row, 'mtype') ?? '').trim().replace('CAROUSEL_ALBUM', 'Carousel').toLowerCase(),
+        // Videos and reels have a separate thumbnail; images use the media URL itself.
+        thumb: (() => { const ok = (v) => { const s = String(v ?? '').trim(); return /^https?:\/\//.test(s) ? s : null; };
+          return ok(get(row, 'm_thumb')) || (/video|reel/i.test(String(get(row, 'mtype') ?? '')) ? null : ok(get(row, 'm_url'))); })(),
         reach: num(get(row, 'm_reach')), impressions: num(get(row, 'm_views')), engagements: num(get(row, 'm_eng')) });
-    } else if (sid && sid.toLowerCase() !== 'null') {
+    } else if (sid && sid.toLowerCase() !== 'null' && (!src || src.includes('linkedin'))) {
       const p = li.get(sid) || { id: sid, platform: 'linkedin', account, published: null, text: '', url: linkedinUrl(sid), type: 'post', reach: 0, impressions: 0, engagements: 0, firstDay: null };
       const day = toIsoDate(get(row, 'date'));
       if (day && (!p.firstDay || day < p.firstDay)) p.firstDay = day;

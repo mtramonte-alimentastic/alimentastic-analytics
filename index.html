@@ -118,6 +118,9 @@ tr.click{cursor:pointer}
 tr.click:hover td{background:var(--surface)}
 td .dl{font-size:12.5px;font-weight:700;margin-left:6px}
 .post a{color:inherit;text-decoration:none}
+.pwrap{display:flex;gap:12px;align-items:center}
+.thumb{flex:0 0 52px;width:52px;height:52px;background:var(--surface);display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:900;font-size:15px;color:#9a9a9a;text-transform:lowercase}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .post a:hover{text-decoration:underline}
 .post small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
 .share{display:flex;align-items:center;gap:8px;min-width:120px}
@@ -1171,6 +1174,16 @@ function renderSocial(R){
   else $('sLstFollowers').innerHTML = '<p class="empty">No follower counts in the data yet.</p>';
 }
 
+const PLAT_MARK = { instagram: 'ig', linkedin: 'in', facebook: 'fb' };
+function thumbHtml(p){
+  const mark = PLAT_MARK[p.platform] || '·';
+  const img = p.thumb
+    // Instagram image links expire after a while; if one fails, fall back to the platform mark.
+    ? `<img src="${esc(p.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.textContent='${mark}'">`
+    : mark;
+  return p.url ? `<a class="thumb" href="${esc(p.url)}" target="_blank" rel="noopener" aria-hidden="true" tabindex="-1">${img}</a>` : `<span class="thumb" aria-hidden="true">${img}</span>`;
+}
+
 function renderSocPosts(){
   const s = state.social, L = state.lastSoc;
   if (!s || !L) return;
@@ -1194,12 +1207,12 @@ function renderSocPosts(){
   $('sPostsSub').textContent = focus
     ? `Published ${fDate(parseISO(from))} – ${fDate(parseISO(to), true)}, around the point you clicked · sorted by ${mLabel}`
     : `Published in this period, sorted by ${mLabel} · click a point in the trend chart to see the posts behind it`;
-  state.csv.sPosts = { name: 'social-posts', cols: ['published','brand','platformLabel','type','text','url','reach','impressions','engagements','er'], rows: posts };
+  state.csv.sPosts = { name: 'social-posts', cols: ['published','brand','platformLabel','type','text','url','thumb','reach','impressions','engagements','er'], rows: posts };
   if (!posts.length){ $('sTblPosts').innerHTML = '<p class="empty">No posts published in this window.</p>'; }
   else {
     const top = posts.slice(0, 25), cut = (x) => x.length > 110 ? x.slice(0, 107) + '…' : x;
     $('sTblPosts').innerHTML = `<table><thead><tr><th>Post</th><th>Brand</th><th>Published</th><th class="n">Reach</th><th class="n">Impressions</th><th class="n">Engagements</th><th class="n">Eng. rate</th></tr></thead><tbody>${top.map(p => `
-      <tr><td class="post" style="max-width:460px">${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(cut(p.text || '(no text)'))} ↗</a>` : esc(cut(p.text || '(no text)'))}<small>${esc(p.platformLabel)}${p.type ? ' · ' + esc(p.type) : ''}</small></td>
+      <tr><td class="post" style="max-width:520px"><div class="pwrap">${thumbHtml(p)}<div>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(cut(p.text || '(no text)'))} ↗</a>` : esc(cut(p.text || '(no text)'))}<small>${esc(p.platformLabel)}${p.type ? ' · ' + esc(p.type) : ''}</small></div></div></td>
       <td>${esc(p.brand)}</td><td>${fDate(parseISO(p.published), true)}</td>
       <td class="n">${p.reach == null ? '–' : fNum(p.reach)}</td><td class="n">${p.impressions == null ? '–' : fNum(p.impressions)}</td>
       <td class="n">${p.engagements == null ? '–' : fNum(p.engagements)}</td><td class="n">${p.er == null ? '–' : fPct(p.er)}</td></tr>`).join('')}</tbody></table>`
