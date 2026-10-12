@@ -117,6 +117,9 @@ td.path{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowra
 tr.click{cursor:pointer}
 tr.click:hover td{background:var(--surface)}
 td .dl{font-size:12.5px;font-weight:700;margin-left:6px}
+.post a{color:inherit;text-decoration:none}
+.post a:hover{text-decoration:underline}
+.post small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
 .share{display:flex;align-items:center;gap:8px;min-width:120px}
 .share i{display:block;height:8px;background:var(--black)}
 .share span{font-size:12.5px;color:var(--muted);min-width:38px}
@@ -374,6 +377,19 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
           <div id="sLstFollowers"></div>
         </section>
       </div>
+
+      <section class="panel" id="sPanelPosts">
+        <div class="ph">
+          <h2 class="bar">Posts</h2>
+          <span class="sub" id="sPostsSub"></span>
+          <div class="tools">
+            <button class="mini" id="sPostsReset" hidden>Show all posts in period</button>
+            <button class="mini" data-csv="sPosts">Download CSV</button>
+          </div>
+        </div>
+        <div class="tw" id="sTblPosts"></div>
+        <p class="footnote" id="sPostsNote"></p>
+      </section>
     </div>
 
     <!-- ===== Search Console ===== -->
@@ -1121,7 +1137,9 @@ function renderSocial(R){
   $('sNote').textContent = notes.join(' ');
 
   state.lastSoc = { all, R, pi };
+  state.postFocus = null;
   renderSocTrend();
+  renderSocPosts();
 
   const brandView = state.socBrand !== 'all';
   const single = accounts.length < 2;
@@ -1153,6 +1171,43 @@ function renderSocial(R){
   else $('sLstFollowers').innerHTML = '<p class="empty">No follower counts in the data yet.</p>';
 }
 
+function renderSocPosts(){
+  const s = state.social, L = state.lastSoc;
+  if (!s || !L) return;
+  if (!s.postsConnected){
+    $('sPostsSub').textContent = '';
+    $('sPostsReset').hidden = true;
+    $('sTblPosts').innerHTML = '<p class="empty">Post-level data is not connected yet. Add the Windsor posts export and SOCIAL_POSTS_TAB in Netlify to see which posts drive reach and engagement.</p>';
+    $('sPostsNote').textContent = '';
+    return;
+  }
+  const m = state.sMetric, mLabel = { reach: 'reach', impressions: 'impressions', engagements: 'engagements' }[m];
+  const R = L.R, focus = state.postFocus;
+  const from = focus ? focus.from : iso(R.cur.start), to = focus ? focus.to : iso(R.cur.end);
+  const posts = (s.posts || []).filter(p =>
+    (state.socBrand === 'all' || brandOf(p) === state.socBrand) &&
+    (state.socChannel === 'all' || p.platform === state.socChannel) &&
+    p.published >= from && p.published <= to)
+    .map(p => ({ ...p, brand: brandOf(p), platformLabel: platLabel(p.platform), er: p.impressions ? (p.engagements || 0) / p.impressions : null }))
+    .sort((a, b) => (b[m] || 0) - (a[m] || 0));
+  $('sPostsReset').hidden = !focus;
+  $('sPostsSub').textContent = focus
+    ? `Published ${fDate(parseISO(from))} – ${fDate(parseISO(to), true)}, around the point you clicked · sorted by ${mLabel}`
+    : `Published in this period, sorted by ${mLabel} · click a point in the trend chart to see the posts behind it`;
+  state.csv.sPosts = { name: 'social-posts', cols: ['published','brand','platformLabel','type','text','url','reach','impressions','engagements','er'], rows: posts };
+  if (!posts.length){ $('sTblPosts').innerHTML = '<p class="empty">No posts published in this window.</p>'; }
+  else {
+    const top = posts.slice(0, 25), cut = (x) => x.length > 110 ? x.slice(0, 107) + '…' : x;
+    $('sTblPosts').innerHTML = `<table><thead><tr><th>Post</th><th>Brand</th><th>Published</th><th class="n">Reach</th><th class="n">Impressions</th><th class="n">Engagements</th><th class="n">Eng. rate</th></tr></thead><tbody>${top.map(p => `
+      <tr><td class="post" style="max-width:460px">${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(cut(p.text || '(no text)'))} ↗</a>` : esc(cut(p.text || '(no text)'))}<small>${esc(p.platformLabel)}${p.type ? ' · ' + esc(p.type) : ''}</small></td>
+      <td>${esc(p.brand)}</td><td>${fDate(parseISO(p.published), true)}</td>
+      <td class="n">${p.reach == null ? '–' : fNum(p.reach)}</td><td class="n">${p.impressions == null ? '–' : fNum(p.impressions)}</td>
+      <td class="n">${p.engagements == null ? '–' : fNum(p.engagements)}</td><td class="n">${p.er == null ? '–' : fPct(p.er)}</td></tr>`).join('')}</tbody></table>`
+      + (posts.length > 25 ? `<p class="footnote">Showing the top 25 of ${posts.length} posts. The CSV download has all of them.</p>` : '');
+  }
+  $('sPostsNote').textContent = 'Post figures are totals since publishing, so a post can keep adding reach after its publish day. Paid boosts are not included.';
+}
+
 function renderSocTrend(){
   const { all, R, pi } = state.lastSoc || {};
   if (!all) return;
@@ -1182,6 +1237,16 @@ function renderSocTrend(){
     type: 'line', data: { labels, datasets: ds },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      onClick: (e, els) => {
+        if (!els.length) return;
+        const i = idx[els[0].index];
+        const day = parseISO(curDates[i]);
+        // Posts usually peak in their first days, so look at the clicked day (or week) and the two days before.
+        state.postFocus = { from: iso(addDays(day, -2)), to: iso(weekly ? addDays(day, 6) : day) };
+        renderSocPosts();
+        $('sPanelPosts').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
       plugins: {
         legend: { position: 'top', align: 'end', labels: { boxWidth: 18, boxHeight: 2, color: '#000' } },
         tooltip: { backgroundColor: '#000', titleFont: { weight: 700 }, padding: 10, cornerRadius: 0,
@@ -1705,7 +1770,8 @@ function bindUI(){
   };
   $('nTblBrands').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-brand]')) e.target.click(); };
   $('selSocChannel').onchange = () => { state.socChannel = $('selSocChannel').value; LS.set('socChannel', state.socChannel); load(); };
-  $('sSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.sMetric = b.dataset.m; renderSocTrend(); };
+  $('sSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.sMetric = b.dataset.m; renderSocTrend(); renderSocPosts(); };
+  $('sPostsReset').onclick = () => { state.postFocus = null; renderSocPosts(); };
   $('sTblAccounts').onclick = (e) => {
     const tr = e.target.closest('tr[data-brand]');
     if (tr){ state.socBrand = tr.dataset.brand; LS.set('socBrand', state.socBrand); $('selSocView').value = state.socBrand; buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }

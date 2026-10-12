@@ -410,6 +410,63 @@ const cdnJson = (body) => new Response(JSON.stringify(body), { status: 200, head
   'Netlify-Vary': 'query=action|brand|start|end,header=x-dashboard-key'
 } });
 
+// ---------- Social posts tab (Windsor post-level export) ----------
+const PCOLS = {
+  date: ['date'], datasource: ['datasource', 'data source'], account: ['account_name', 'account name'],
+  media_id: ['media_id', 'media id'], caption: ['media_caption', 'media caption'], permalink: ['media_permalink', 'media permalink'],
+  mtype: ['media_type', 'media type'], m_reach: ['media_reach', 'media reach'], m_views: ['media_views', 'media views'],
+  m_eng: ['media_engagement', 'media engagement'], m_created: ['timestamp', 'media created'],
+  share_id: ['share_id', 'share id'], post_id: ['post_id', 'post id'], s_text: ['share_text', 'share text'],
+  s_created: ['share_created_time', 'share created time'], s_impr: ['share_impression_count', 'share/post impression count'],
+  s_uimpr: ['share_unique_impressions_count', 'share/post unique impressions count'], s_eng: ['share_total_engagements', 'share/post total engagements']
+};
+function toIsoAny(v) {
+  if (typeof v === 'number') {
+    if (v > 1e11) return new Date(v).toISOString().slice(0, 10);          // epoch milliseconds
+    if (v > 1e9) return new Date(v * 1000).toISOString().slice(0, 10);    // epoch seconds
+  }
+  const s = String(v ?? '').trim();
+  if (/^\d{12,}$/.test(s)) return new Date(Number(s)).toISOString().slice(0, 10);
+  return toIsoDate(v);
+}
+function linkedinUrl(id) {
+  const s = String(id || '').trim();
+  if (!s) return null;
+  if (s.startsWith('urn:li:')) return `https://www.linkedin.com/feed/update/${s}/`;
+  if (/^\d+$/.test(s)) return `https://www.linkedin.com/feed/update/urn:li:share:${s}/`;
+  return null;
+}
+function parsePosts(values) {
+  if (!values.length) return [];
+  const head = values[0].map(norm);
+  const idx = {};
+  for (const [k, names] of Object.entries(PCOLS)) idx[k] = head.findIndex(h => names.includes(h));
+  const get = (row, k) => idx[k] >= 0 ? row[idx[k]] : null;
+  const ig = new Map(), li = new Map();
+  for (const row of values.slice(1)) {
+    const account = String(get(row, 'account') ?? '').trim();
+    const mid = String(get(row, 'media_id') ?? '').trim();
+    const sid = String(get(row, 'share_id') ?? get(row, 'post_id') ?? '').trim();
+    if (mid && mid.toLowerCase() !== 'null') {
+      ig.set(mid, { id: mid, platform: 'instagram', account,
+        published: toIsoAny(get(row, 'm_created')) || toIsoDate(get(row, 'date')),
+        text: String(get(row, 'caption') ?? '').replace(/\s+/g, ' ').trim(), url: String(get(row, 'permalink') ?? '').trim() || null,
+        type: String(get(row, 'mtype') ?? '').trim().replace('CAROUSEL_ALBUM', 'Carousel').toLowerCase(),
+        reach: num(get(row, 'm_reach')), impressions: num(get(row, 'm_views')), engagements: num(get(row, 'm_eng')) });
+    } else if (sid && sid.toLowerCase() !== 'null') {
+      const p = li.get(sid) || { id: sid, platform: 'linkedin', account, published: null, text: '', url: linkedinUrl(sid), type: 'post', reach: 0, impressions: 0, engagements: 0, firstDay: null };
+      const day = toIsoDate(get(row, 'date'));
+      if (day && (!p.firstDay || day < p.firstDay)) p.firstDay = day;
+      p.published = p.published || toIsoAny(get(row, 's_created'));
+      const txt = String(get(row, 's_text') ?? '').replace(/\s+/g, ' ').trim(); if (txt && txt.toLowerCase() !== 'null') p.text = txt;
+      p.reach += num(get(row, 's_uimpr')) || 0; p.impressions += num(get(row, 's_impr')) || 0; p.engagements += num(get(row, 's_eng')) || 0;
+      li.set(sid, p);
+    }
+  }
+  const out = [...ig.values(), ...[...li.values()].map(p => { p.published = p.published || p.firstDay; delete p.firstDay; return p; })];
+  return out.filter(p => p.published).sort((a, b) => b.published.localeCompare(a.published));
+}
+
 export default async (req) => {
   if (!authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
@@ -439,18 +496,21 @@ export default async (req) => {
       if (!id) throw fail('The social data sheet is not connected yet. Add SOCIAL_SHEET_ID (the Google Sheet link or ID) in Netlify under Site configuration → Environment variables, then redeploy.');
       const tab = (process.env.SOCIAL_SHEET_TAB || '').trim();
       const fTab = (process.env.SOCIAL_FOLLOWERS_TAB || '').trim();
+      const pTab = (process.env.SOCIAL_POSTS_TAB || '').trim();
       const rng = (name) => name ? `'${name.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
-      const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : []);
+      const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : [], pTab ? [rng(pTab)] : []);
       const qs = ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
       let j;
       try {
         j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
       } catch (e) {
-        if (fTab && /Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${fTab}". Check SOCIAL_FOLLOWERS_TAB in Netlify (it must match the tab name exactly).`, 400);
+        if (fTab && /Unable to parse range/i.test(e.message) && e.message.includes(fTab)) throw fail(`The sheet has no tab called "${fTab}". Check SOCIAL_FOLLOWERS_TAB in Netlify (it must match the tab name exactly).`, 400);
+        if (pTab && /Unable to parse range/i.test(e.message) && e.message.includes(pTab)) throw fail(`The sheet has no tab called "${pTab}". Check SOCIAL_POSTS_TAB in Netlify (it must match the tab name exactly).`, 400);
         if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check SOCIAL_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400);
         throw e;
       }
-      const [main, fol] = (j.valueRanges || []).map(v => v.values || []);
+      const vr = (j.valueRanges || []).map(v => v.values || []);
+      const main = vr[0], fol = fTab ? vr[1] : null, posts = pTab ? vr[fTab ? 2 : 1] : null;
       const out = parseSocial(main || []);
       if (fol && fol.length) {
         // Follower snapshots: only rows with a follower count, added without touching reach/impressions.
@@ -458,6 +518,8 @@ export default async (req) => {
           .forEach(r => out.rows.push({ ...r, reach: null, impressions: null, engagements: null, newFollowers: null, snapshot: true }));
         out.rows.sort((a, b) => a.date.localeCompare(b.date));
       }
+      out.postsConnected = !!pTab;
+      out.posts = posts ? parsePosts(posts) : [];
       return json(200, out);
     }
     if (action === 'klaviyo_accounts') {
