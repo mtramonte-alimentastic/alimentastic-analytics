@@ -167,6 +167,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <button class="tab" data-tab="gsc">Search Console</button>
   <button class="tab" data-tab="social">Social</button>
   <button class="tab" data-tab="newsletter">Newsletter</button>
+  <button class="tab" data-tab="shop">Shop</button>
 </nav>
 
 <main>
@@ -191,6 +192,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlSocView" hidden><span>Brand</span><select id="selSocView"></select></label>
       <label class="ctl" id="ctlSocChannel" hidden><span>Channel</span><select id="selSocChannel"></select></label>
       <label class="ctl" id="ctlNlBrand" hidden><span>Brand</span><select id="selNlBrand"></select></label>
+      <label class="ctl" id="ctlShopBrand" hidden><span>Store</span><select id="selShopBrand"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
           <button data-days="7">7 days</button>
@@ -293,6 +295,57 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         </div>
       </div>
       <p class="footnote" id="detailNote" hidden>Pick a single site under View to see pages, landing pages, sources and key events.</p>
+    </div>
+
+    <!-- ===== Shop ===== -->
+    <div id="shopContent" hidden>
+      <div class="kpis" id="shKpis"></div>
+      <p class="footnote" id="shNote"></p>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Trend</h2>
+          <span class="sub" id="shTrendSub"></span>
+          <div class="tools">
+            <div class="seg small" id="shSegMetric">
+              <button data-m="sales">Total sales</button>
+              <button data-m="orders">Orders</button>
+              <button data-m="aov">Avg. order value</button>
+              <button data-m="items">Items sold</button>
+            </div>
+          </div>
+        </div>
+        <div class="chartbox"><canvas id="shTrendChart" aria-label="Shop sales trend chart"></canvas></div>
+      </section>
+
+      <section class="panel" id="shPanelStores">
+        <div class="ph">
+          <h2 class="bar">Stores</h2>
+          <span class="sub">Select a row to open that store</span>
+          <div class="tools"><button class="mini" data-csv="shStores">Download CSV</button></div>
+        </div>
+        <div class="tw" id="shTblStores"></div>
+      </section>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Top products</h2>
+          <span class="sub">By net sales</span>
+          <div class="tools"><button class="mini" data-csv="shProducts">Download CSV</button></div>
+        </div>
+        <div class="tw" id="shTblProducts"></div>
+      </section>
+
+      <div class="grid2">
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Sales channels</h2><span class="sub">Total sales</span></div>
+          <div id="shLstChannels"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Countries</h2><span class="sub">Total sales, by shipping country</span></div>
+          <div id="shLstCountries"></div>
+        </section>
+      </div>
     </div>
 
     <!-- ===== Newsletter ===== -->
@@ -552,6 +605,9 @@ const state = {
   nlBrands: null,
   nlBrand: LS.get('nlBrand', 'all'),
   nMetric: 'revenue',
+  shopBrands: null,
+  shopBrand: LS.get('shopBrand', 'all'),
+  shMetric: 'sales',
   sMetric: 'reach',
   metric: 'activeUsers',
   cache: new Map(),
@@ -674,21 +730,22 @@ const derive = (t) => t && ({ ...t,
 let loadSeq = 0;
 function load(){
   syncTabUI();
-  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : loadGa();
+  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : state.tab === 'shop' ? loadShop() : loadGa();
 }
 
 function syncTabUI(){
-  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', ga = !gsc && !soc && !nl;
+  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', shop = state.tab === 'shop', ga = !gsc && !soc && !nl && !shop;
   document.querySelectorAll('.tab[data-tab]').forEach(b => {
     const on = b.dataset.tab === state.tab;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop;
   if (!ga) $('content').hidden = true;
   if (!gsc) $('gscContent').hidden = true;
   if (!soc) $('socContent').hidden = true;
   if (!nl) $('nlContent').hidden = true;
+  if (!shop) $('shopContent').hidden = true;
 }
 
 async function loadGa(){
@@ -1132,7 +1189,18 @@ function renderSocial(R){
     { label: 'Followers', v: fCur.size ? fNum(followersNow) : '–', d: followersPrev != null ? delta(followersNow, followersPrev) : null }
   ];
   if (cur.hasNew) kpis.push({ label: hasIG ? 'New followers (LinkedIn)' : 'New followers', v: fNum(cur.newFollowers), d: prev && prev.hasNew ? delta(cur.newFollowers, prev.newFollowers) : null });
-  $('sKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${k.label}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}</div>`).join('');
+  if (state.social.postsConnected){
+    const inView = (p) => (state.socBrand === 'all' || brandOf(p) === state.socBrand) && (state.socChannel === 'all' || p.platform === state.socChannel);
+    const posts = (state.social.posts || []).filter(inView);
+    const nCur = posts.filter(p => p.published >= ci[0] && p.published <= ci[1]).length;
+    // Only compare when the posts data reaches back to the start of the previous period.
+    const oldest = posts.reduce((m, p) => p.published < m ? p.published : m, '9999');
+    const nPrev = pi && oldest <= pi[0] ? posts.filter(p => p.published >= pi[0] && p.published <= pi[1]).length : null;
+    const perWeek = nCur / (R.days / 7);
+    kpis.splice(0, 0, { label: 'Posts published', v: fNum(nCur), d: nPrev != null ? delta(nCur, nPrev) : null,
+      sub: R.days >= 14 ? `${perWeek.toFixed(perWeek < 10 ? 1 : 0)} per week` : '' });
+  }
+  $('sKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${k.label}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}${k.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(k.sub)}</div>` : ''}</div>`).join('');
 
   const notes = [`Data from Windsor's daily export, up to ${fDate(parseISO(lastDate), true)}.`];
   if (R.prev && !pOk) notes.push('There is not enough history yet to compare with the previous period.');
@@ -1490,6 +1558,173 @@ function renderNlTrend(){
   });
 }
 
+/* =====================================================================
+   SHOP (Shopify via ShopifyQL, one private app per store)
+   ===================================================================== */
+const money = (v, cur) => { try { return new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur || 'EUR', maximumFractionDigits: v != null && Math.abs(v) < 100 ? 2 : 0 }).format(v || 0); } catch(e){ return fEur(v); } };
+
+async function shopFetch(brand, start, end){
+  const key = `shop|${brand}|${start}|${end}`;
+  if (state.cache.has(key)) return state.cache.get(key);
+  const v = await api('shopify_sales', { brand, start, end });
+  state.cache.set(key, v);
+  return v;
+}
+
+function buildShopSelect(){
+  const b = state.shopBrands || [];
+  if (state.shopBrand !== 'all' && !b.includes(state.shopBrand)) state.shopBrand = 'all';
+  if (b.length === 1) state.shopBrand = b[0];
+  $('selShopBrand').innerHTML = (b.length > 1 ? '<option value="all">All stores</option>' : '') + b.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  $('selShopBrand').value = state.shopBrand;
+}
+
+async function loadShop(){
+  const seq = ++loadSeq;
+  const R = getRanges(1);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('shopContent').classList.add('dim');
+  try {
+    if (!state.shopBrands){
+      setStatus('Loading Shopify stores…');
+      state.shopBrands = (await api('shopify_stores')).brands || [];
+      buildShopSelect();
+    }
+    if (seq !== loadSeq) return;
+    if (!state.shopBrands.length){
+      $('shopContent').hidden = true;
+      showAlert('Shopify is not connected yet. Add SHOPIFY_STORES in Netlify (like "Schnauze &amp; Co.: your-store.myshopify.com | CLIENT_ID | CLIENT_SECRET"), then redeploy.');
+      return;
+    }
+    const targets = state.shopBrand === 'all' ? state.shopBrands : [state.shopBrand];
+    setStatus(targets.length > 1 ? `Loading ${targets.length} stores…` : `Loading ${targets[0]}…`);
+    const cur = [iso(R.cur.start), iso(R.cur.end)], prev = R.prev ? [iso(R.prev.start), iso(R.prev.end)] : null;
+    const results = await pool(targets, 3, async b => ({ brand: b, cur: await shopFetch(b, cur[0], cur[1]), prev: prev ? await shopFetch(b, prev[0], prev[1]) : null }),
+      done => { if (seq === loadSeq && targets.length > 1) setStatus(`Loading stores… ${done} of ${targets.length}`); });
+    if (seq !== loadSeq) return;
+    const authFail = results.find(r => !r.ok && r.e instanceof AuthError);
+    if (authFail) throw authFail.e;
+    const ok = results.filter(r => r.ok).map(r => r.v);
+    const failed = results.map((r, i) => r.ok ? null : { name: targets[i], msg: r.e.message }).filter(Boolean);
+    ok.forEach(d => (d.cur.errors || []).forEach(m => failed.push({ name: `${d.brand} (${m.split(':')[0]})`, msg: m.slice(m.indexOf(':') + 1).trim() })));
+    if (!ok.length){ $('shopContent').hidden = true; showAlert(`Could not load Shopify data:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`); return; }
+    $('shopContent').hidden = false;
+    renderShop(ok, R);
+    if (failed.length) showAlert(`Some Shopify data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
+    $('shopContent').hidden = true;
+    showAlert(esc(e.message));
+  } finally {
+    if (seq === loadSeq){ setStatus(''); $('shopContent').classList.remove('dim'); }
+  }
+}
+
+function shopSum(list){
+  const t = { sales: 0, net: 0, orders: 0, items: 0, customers: 0, newCustomers: 0, returningCustomers: 0, reversals: 0 };
+  list.forEach(x => { for (const k in t) t[k] += (x && x[k]) || 0; });
+  t.aov = t.orders ? t.net / t.orders : 0;            // close to Shopify's AOV ((gross - discounts) / orders)
+  t.returningRate = t.customers ? t.returningCustomers / t.customers : null;
+  return t;
+}
+
+function renderShop(results, R){
+  const cur0 = results.map(r => r.cur.currency).filter(Boolean);
+  const cur = cur0.length && cur0.every(c => c === cur0[0]) ? cur0[0] : 'EUR';
+  const single = results.length < 2;
+  // A single store uses Shopify's own AOV; several stores are combined from net sales / orders.
+  const c = shopSum(results.map(r => r.cur.totals)), p = R.prev ? shopSum(results.map(r => r.prev && r.prev.totals)) : null;
+  if (single){ c.aov = results[0].cur.totals.aov; if (p && results[0].prev) p.aov = results[0].prev.totals.aov; }
+  const kpis = [
+    { label: 'Total sales', v: money(c.sales, cur), d: p && delta(c.sales, p.sales), sub: `Net sales ${money(c.net, cur)}` },
+    { label: 'Orders', v: fNum(c.orders), d: p && delta(c.orders, p.orders) },
+    { label: 'Average order value', v: money(c.aov, cur), d: p && delta(c.aov, p.aov) },
+    { label: 'Items sold', v: fNum(c.items), d: p && delta(c.items, p.items) },
+    { label: 'New customers', v: fNum(c.newCustomers), d: p && delta(c.newCustomers, p.newCustomers) },
+    { label: 'Returning customer rate', v: c.returningRate == null ? '–' : fPct(c.returningRate), d: p && c.returningRate != null && p.returningRate != null ? delta(c.returningRate, p.returningRate, true) : null },
+    { label: 'Returns & refunds', v: money(c.reversals, cur), d: p && (() => { const d = delta(c.reversals, p.reversals); if (d && d.cls !== 'flat') d.cls = d.cls === 'up' ? 'down' : 'up'; return d; })() }
+  ];
+  $('shKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}${k.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(k.sub)}</div>` : ''}</div>`).join('');
+  $('shNote').textContent = 'Figures come straight from Shopify Analytics. Total sales include VAT and shipping; net sales are after discounts and returns, without VAT and shipping.' + (single ? '' : ' Average order value across stores is net sales per order.');
+
+  state.lastShop = { results, R, cur };
+  renderShopTrend();
+
+  $('shPanelStores').hidden = single;
+  if (!single){
+    const rows = results.map(r => { const t = r.cur.totals, pt = r.prev && r.prev.totals;
+      return { brand: r.brand, sales: t.sales, dSales: pt ? delta(t.sales, pt.sales) : null, net: t.net, orders: t.orders, dOrders: pt ? delta(t.orders, pt.orders) : null,
+        aov: t.aov, items: t.items, newCustomers: t.newCustomers, currency: r.cur.currency }; }).sort((a, b) => b.sales - a.sales);
+    const total = rows.reduce((s, r) => s + r.sales, 0) || 1;
+    const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
+    $('shTblStores').innerHTML = `<table><thead><tr><th>Store</th><th class="n">Total sales</th><th>Share</th><th class="n">Orders</th><th class="n">AOV</th><th class="n">Items</th><th class="n">New customers</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="click" data-brand="${esc(r.brand)}" tabindex="0"><td><b>${esc(r.brand)}</b></td>
+      <td class="n">${money(r.sales, r.currency)}${dl(r.dSales)}</td>
+      <td><div class="share"><i style="width:${(r.sales/total*100).toFixed(1)}%"></i><span>${(r.sales/total*100).toFixed(1)}%</span></div></td>
+      <td class="n">${fNum(r.orders)}${dl(r.dOrders)}</td><td class="n">${money(r.aov, r.currency)}</td><td class="n">${fNum(r.items)}</td><td class="n">${fNum(r.newCustomers)}</td></tr>`).join('')}</tbody></table>`;
+    state.csv.shStores = { name: 'shop-stores', cols: ['brand','sales','net','orders','aov','items','newCustomers'], rows };
+  }
+
+  const products = results.flatMap(r => (r.cur.products || []).map(x => ({ ...x, brand: r.brand, currency: r.cur.currency })))
+    .sort((a, b) => b.net - a.net).slice(0, 15);
+  const pcols = [{ k: 'product', label: 'Product' }].concat(single ? [] : [{ k: 'brand', label: 'Store' }])
+    .concat([{ k: 'net', label: 'Net sales', n: 1, f: (v) => money(v, cur) }, { k: 'items', label: 'Items sold', n: 1, f: fNum }]);
+  table('shTblProducts', pcols, products, 'shProducts');
+
+  const channels = sumByKey(results.map(r => r.cur.channels || []), 'channel', ['sales', 'orders']).sort((a, b) => b.sales - a.sales);
+  if (channels.length) renderBars('shLstChannels', channels, 'channel', 'sales'); else $('shLstChannels').innerHTML = '<p class="empty">No data for this period.</p>';
+  const countries = sumByKey(results.map(r => r.cur.countries || []), 'country', ['sales', 'orders']).sort((a, b) => b.sales - a.sales).slice(0, 10);
+  if (countries.length) renderBars('shLstCountries', countries, 'country', 'sales'); else $('shLstCountries').innerHTML = '<p class="empty">No data for this period.</p>';
+  // bar values are money: reformat the value cells
+  ['shLstChannels', 'shLstCountries'].forEach(id => $(id).querySelectorAll('.br .v').forEach(v => {
+    const small = v.querySelector('small'); const num = Number(v.firstChild.textContent.replace(/[^0-9.-]/g, ''));
+    if (!isNaN(num)) v.firstChild.textContent = money(num, cur); if (small) v.appendChild(small);
+  }));
+}
+
+function renderShopTrend(){
+  const { results, R, cur } = state.lastShop || {};
+  if (!results) return;
+  const m = state.shMetric;
+  document.querySelectorAll('#shSegMetric button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  const toIso = (d) => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  const curDates = dateList(R.cur).map(toIso), prevDates = R.prev ? dateList(R.prev).map(toIso) : [];
+  const day = (part, d) => d == null ? null : results.reduce((a, r) => { const x = r[part] && r[part].daily && r[part].daily[d]; if (x){ a.sales += x.sales; a.net += x.net; a.orders += x.orders; a.items += x.items; } return a; }, { sales: 0, net: 0, orders: 0, items: 0 });
+  let cA = curDates.map(d => day('cur', d)), pA = curDates.map((_, i) => R.prev ? day('prev', prevDates[i] ?? null) : null);
+  const weekly = R.days > 120;
+  if (weekly){
+    const b = (arr) => { const o = []; for (let i = 0; i < arr.length; i += 7){ const s = arr.slice(i, i + 7).filter(Boolean); o.push(s.length ? s.reduce((a, x) => ({ sales: a.sales + x.sales, net: a.net + x.net, orders: a.orders + x.orders, items: a.items + x.items }), { sales: 0, net: 0, orders: 0, items: 0 }) : null); } return o; };
+    cA = b(cA); pA = b(pA);
+  }
+  const val = (x) => !x ? null : m === 'aov' ? (x.orders ? x.net / x.orders : null) : x[m];
+  const cv = cA.map(val), pv = pA.map(val);
+  const idx = curDates.map((_, i) => i).filter(i => i % (weekly ? 7 : 1) === 0);
+  const labels = idx.map(i => fDate(parseISO(curDates[i])));
+  const tips = idx.map(i => weekly ? `Week from ${fDate(parseISO(curDates[i]), true)}` : fDate(parseISO(curDates[i]), true) + (prevDates[i] ? ` vs ${fDate(parseISO(prevDates[i]), true)}` : ''));
+  $('shTrendSub').textContent = (weekly ? 'Weekly' : 'Daily') + (m === 'aov' ? ' · net sales per order' : '');
+  const fmt = (v) => v == null ? '–' : (m === 'sales' || m === 'aov') ? money(v, cur) : fNum(v);
+  const ds = [{ label: 'This period', data: cv, borderColor: '#D6001C', backgroundColor: 'rgba(214,0,28,.08)', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: .25, fill: true, spanGaps: m === 'aov' }];
+  if (R.prev) ds.push({ label: state.compare === 'yoy' ? 'Last year' : 'Previous period', data: pv, borderColor: '#000', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 3, tension: .25, fill: false, spanGaps: m === 'aov' });
+  if (state.shChart) state.shChart.destroy();
+  if (!window.Chart) return;
+  state.shChart = new Chart($('shTrendChart'), {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 18, boxHeight: 2, color: '#000' } },
+        tooltip: { backgroundColor: '#000', titleFont: { weight: 700 }, padding: 10, cornerRadius: 0,
+          callbacks: { title: (it) => tips[it[0].dataIndex], label: (c) => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 18 }, border: { color: '#000' } },
+        y: { beginAtZero: true, grid: { color: '#ececec' }, border: { display: false }, ticks: { callback: (v) => (m === 'sales' || m === 'aov') ? money(v, cur) : NF.format(v) } }
+      }
+    }
+  });
+}
+
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
 function showAlert(html){ $('alert').innerHTML = html; $('alert').hidden = false; }
 
@@ -1768,13 +2003,20 @@ function bindUI(){
     state.range = { from: f, to: t }; LS.set('range', state.range); load();
   };
   $('selCompare').onchange = () => { state.compare = $('selCompare').value; LS.set('compare', state.compare); load(); };
-  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; load(); };
+  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; if (state.tab === 'shop') state.shopBrands = null; load(); };
 
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => {
     if (state.tab === b.dataset.tab) return;
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
   $('selSocView').onchange = () => { state.socBrand = $('selSocView').value; LS.set('socBrand', state.socBrand); buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); };
+  $('selShopBrand').onchange = () => { state.shopBrand = $('selShopBrand').value; LS.set('shopBrand', state.shopBrand); load(); };
+  $('shSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.shMetric = b.dataset.m; renderShopTrend(); };
+  $('shTblStores').onclick = (e) => {
+    const tr = e.target.closest('tr[data-brand]');
+    if (tr){ state.shopBrand = tr.dataset.brand; LS.set('shopBrand', state.shopBrand); $('selShopBrand').value = state.shopBrand; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  };
+  $('shTblStores').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-brand]')) e.target.click(); };
   $('selNlBrand').onchange = () => { state.nlBrand = $('selNlBrand').value; LS.set('nlBrand', state.nlBrand); load(); };
   $('nSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.nMetric = b.dataset.m; renderNlTrend(); };
   $('nTblBrands').onclick = (e) => {

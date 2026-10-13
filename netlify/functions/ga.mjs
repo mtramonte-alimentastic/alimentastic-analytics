@@ -474,6 +474,83 @@ function parsePosts(values) {
   return out.filter(p => p.published).sort((a, b) => b.published.localeCompare(a.published));
 }
 
+// ---------- Shopify (ShopifyQL, one private Dev Dashboard app per store) ----------
+// SHOPIFY_STORES: stores separated by ; or new lines, each as
+//   Brand name: store.myshopify.com | CLIENT_ID | CLIENT_SECRET
+// or, for an older admin-created app:  Brand name: store.myshopify.com | shpat_xxx
+const SHOPIFY_API = '2026-10';
+const shopTokens = new Map();
+function shopifyStores() {
+  return (process.env.SHOPIFY_STORES || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).map(s => {
+    const m = s.match(/^(.+?)\s*:\s*([a-z0-9][a-z0-9-]*\.myshopify\.com)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]+?)\s*)?$/i);
+    if (!m) return null;
+    const [, brand, domain, a, b] = m;
+    return a.startsWith('shpat_') ? { brand: brand.trim(), domain: domain.toLowerCase(), token: a } : { brand: brand.trim(), domain: domain.toLowerCase(), clientId: a, clientSecret: b || '' };
+  }).filter(Boolean);
+}
+function shopifyStore(brand) {
+  const all = shopifyStores();
+  if (!all.length) throw fail('Shopify is not connected yet. Add SHOPIFY_STORES in Netlify (like "Schnauze & Co.: your-store.myshopify.com | CLIENT_ID | CLIENT_SECRET"), then redeploy.');
+  const s = all.find(x => x.brand === brand);
+  if (!s) throw fail(`No Shopify store configured for "${brand}".`, 400);
+  return s;
+}
+async function shopifyToken(store) {
+  if (store.token) return store.token;
+  const c = shopTokens.get(store.domain);
+  if (c && Date.now() < c.exp) return c.token;
+  if (!store.clientSecret) throw fail(`The Shopify line for ${store.brand} needs both a Client ID and a Client Secret.`);
+  const r = await fetch(`https://${store.domain}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: store.clientId, client_secret: store.clientSecret })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw fail(`Shopify (${store.brand}) refused the app credentials: ${j.error_description || j.error || r.status}. Check the Client ID and Secret, and that the app is installed on the store.`, 502);
+  shopTokens.set(store.domain, { token: j.access_token, exp: Date.now() + (Number(j.expires_in || 86400) - 300) * 1000 });
+  return j.access_token;
+}
+async function shopifyGraphql(store, query) {
+  const token = await shopifyToken(store);
+  const r = await fetch(`https://${store.domain}/admin/api/${SHOPIFY_API}/graphql.json`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token }, body: JSON.stringify({ query })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 || r.status === 403) { shopTokens.delete(store.domain); throw fail(`Shopify (${store.brand}) refused access (${r.status}). Check that the app has the read_reports scope and is installed.`, 502); }
+  if (!r.ok) throw fail(`Shopify (${store.brand}) returned an error (${r.status}).`, 502);
+  if (j.errors?.length) {
+    const msg = j.errors.map(e => e.message).join(' ');
+    throw fail(`Shopify (${store.brand}): ${msg}${/protected customer data|read_reports|access denied/i.test(msg) ? ' — in the Dev Dashboard, give the app the read_reports scope and protected customer data access (name, email, address, phone), then reinstall it.' : ''}`, 502);
+  }
+  return j.data || {};
+}
+const QL = (name, q) => `${name}: shopifyqlQuery(query: ${JSON.stringify(q)}) { tableData { columns { name dataType } rows } parseErrors }`;
+async function shopifySales(store, start, end) {
+  const w = `SINCE ${start} UNTIL ${end}`;
+  const data = await shopifyGraphql(store, `{ shop { name currencyCode }
+    ${QL('daily', `FROM sales SHOW total_sales, net_sales, orders, net_items_sold TIMESERIES day WITH TOTALS ${w} ORDER BY day ASC`)}
+    ${QL('totals', `FROM sales SHOW total_sales, net_sales, orders, average_order_value, net_items_sold, customers, new_customers, returning_customers, sales_reversals ${w}`)}
+    ${QL('products', `FROM sales SHOW net_sales, net_items_sold GROUP BY ONLY TOP 10 product_title ${w} ORDER BY net_sales DESC`)}
+    ${QL('channels', `FROM sales SHOW total_sales, orders GROUP BY sales_channel ${w} ORDER BY total_sales DESC LIMIT 10`)}
+    ${QL('countries', `FROM sales SHOW total_sales, orders GROUP BY shipping_country ${w} ORDER BY total_sales DESC LIMIT 10`)} }`);
+  const out = { currency: data.shop?.currencyCode || 'EUR', shopName: data.shop?.name || store.brand, errors: [] };
+  const rows = (k) => {
+    const r = data[k];
+    if (!r) return [];
+    if (r.parseErrors?.length) { out.errors.push(`${k}: ${r.parseErrors.join(' ')}`); return []; }
+    return r.tableData?.rows || [];
+  };
+  const n = (v) => v == null || v === '' ? 0 : Number(v) || 0;
+  out.daily = Object.fromEntries(rows('daily').map(r => [String(r.day).slice(0, 10), { sales: n(r.total_sales), net: n(r.net_sales), orders: n(r.orders), items: n(r.net_items_sold) }]));
+  const t = rows('totals')[0] || {};
+  out.totals = { sales: n(t.total_sales), net: n(t.net_sales), orders: n(t.orders), aov: n(t.average_order_value), items: n(t.net_items_sold),
+    customers: n(t.customers), newCustomers: n(t.new_customers), returningCustomers: n(t.returning_customers), reversals: Math.abs(n(t.sales_reversals)) };
+  out.products = rows('products').map(r => ({ product: r.product_title || 'Other', net: n(r.net_sales), items: n(r.net_items_sold) }));
+  out.channels = rows('channels').map(r => ({ channel: r.sales_channel || 'Unknown', sales: n(r.total_sales), orders: n(r.orders) }));
+  out.countries = rows('countries').map(r => ({ country: r.shipping_country || 'Unknown', sales: n(r.total_sales), orders: n(r.orders) }));
+  return out;
+}
+
 export default async (req) => {
   if (!authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
@@ -528,6 +605,15 @@ export default async (req) => {
       out.postsConnected = !!pTab;
       out.posts = posts ? parsePosts(posts) : [];
       return json(200, out);
+    }
+    if (action === 'shopify_stores') {
+      return json(200, { brands: shopifyStores().map(s => s.brand) });
+    }
+    if (action === 'shopify_sales') {
+      const store = shopifyStore(url.searchParams.get('brand') || '');
+      const start = isoDay(url.searchParams.get('start')), end = isoDay(url.searchParams.get('end'));
+      if (!start || !end || start > end) return json(400, { error: 'Invalid date range.' });
+      return cdnJson(await shopifySales(store, start, end));
     }
     if (action === 'klaviyo_accounts') {
       return json(200, { brands: klaviyoAccounts().map(a => a.brand) });
