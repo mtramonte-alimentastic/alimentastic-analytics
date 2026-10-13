@@ -481,8 +481,10 @@ function parsePosts(values) {
 const SHOPIFY_API = '2026-10';
 const shopTokens = new Map();
 function shopifyStores() {
-  return (process.env.SHOPIFY_STORES || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).map(s => {
-    const m = s.match(/^(.+?)\s*:\s*([a-z0-9][a-z0-9-]*\.myshopify\.com)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]+?)\s*)?$/i);
+  // Tolerant parsing: quotes, https://, trailing slashes, and | , or spaces between the parts are all accepted.
+  return (process.env.SHOPIFY_STORES || '').replace(/^["'\s]+|["'\s]+$/g, '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean).map(s => {
+    s = s.replace(/^["']|["']$/g, '').replace(/https?:\/\//gi, '');
+    const m = s.match(/^(.+?)\s*:\s*([a-z0-9][a-z0-9-]*\.myshopify\.com)\/?\s*[|,\s]\s*([^|,\s]+)\s*(?:[|,\s]\s*([^|,\s]+))?\s*$/i);
     if (!m) return null;
     const [, brand, domain, a, b] = m;
     return a.startsWith('shpat_') ? { brand: brand.trim(), domain: domain.toLowerCase(), token: a } : { brand: brand.trim(), domain: domain.toLowerCase(), clientId: a, clientSecret: b || '' };
@@ -510,16 +512,23 @@ async function shopifyToken(store) {
   shopTokens.set(store.domain, { token: j.access_token, exp: Date.now() + (Number(j.expires_in || 86400) - 300) * 1000 });
   return j.access_token;
 }
-async function shopifyGraphql(store, query) {
+async function shopifyGraphql(store, query, tries = 4) {
   const token = await shopifyToken(store);
-  const r = await fetch(`https://${store.domain}/admin/api/${SHOPIFY_API}/graphql.json`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token }, body: JSON.stringify({ query })
-  });
-  const j = await r.json().catch(() => ({}));
+  let r, j;
+  for (let attempt = 1; ; attempt++) {
+    r = await fetch(`https://${store.domain}/admin/api/${SHOPIFY_API}/graphql.json`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token }, body: JSON.stringify({ query })
+    });
+    j = await r.json().catch(() => ({}));
+    const limited = r.status === 429 || (j.errors || []).some(e => /rate limit|throttled/i.test(e.message || '') || e.extensions?.code === 'THROTTLED');
+    if (!limited) break;
+    if (attempt >= tries) throw fail(`Shopify (${store.brand}) is limiting analytics requests right now. Wait a minute and click Refresh.`, 503);
+    await sleep(Math.min(4000, Number(r.headers.get('retry-after') || 0) * 1000 || 700 * attempt));
+  }
   if (r.status === 401 || r.status === 403) { shopTokens.delete(store.domain); throw fail(`Shopify (${store.brand}) refused access (${r.status}). Check that the app has the read_reports scope and is installed.`, 502); }
   if (!r.ok) throw fail(`Shopify (${store.brand}) returned an error (${r.status}).`, 502);
   if (j.errors?.length) {
-    const msg = j.errors.map(e => e.message).join(' ');
+    const msg = [...new Set(j.errors.map(e => e.message))].join(' ');
     throw fail(`Shopify (${store.brand}): ${msg}${/protected customer data|read_reports|access denied/i.test(msg) ? ' — in the Dev Dashboard, give the app the read_reports scope and protected customer data access (name, email, address, phone), then reinstall it.' : ''}`, 502);
   }
   return j.data || {};
@@ -527,12 +536,18 @@ async function shopifyGraphql(store, query) {
 const QL = (name, q) => `${name}: shopifyqlQuery(query: ${JSON.stringify(q)}) { tableData { columns { name dataType } rows } parseErrors }`;
 async function shopifySales(store, start, end) {
   const w = `SINCE ${start} UNTIL ${end}`;
-  const data = await shopifyGraphql(store, `{ shop { name currencyCode }
-    ${QL('daily', `FROM sales SHOW total_sales, net_sales, orders, net_items_sold TIMESERIES day WITH TOTALS ${w} ORDER BY day ASC`)}
-    ${QL('totals', `FROM sales SHOW total_sales, net_sales, orders, average_order_value, net_items_sold, customers, new_customers, returning_customers, sales_reversals ${w}`)}
-    ${QL('products', `FROM sales SHOW net_sales, net_items_sold GROUP BY ONLY TOP 10 product_title ${w} ORDER BY net_sales DESC`)}
-    ${QL('channels', `FROM sales SHOW total_sales, orders GROUP BY sales_channel ${w} ORDER BY total_sales DESC LIMIT 10`)}
-    ${QL('countries', `FROM sales SHOW total_sales, orders GROUP BY shipping_country ${w} ORDER BY total_sales DESC LIMIT 10`)} }`);
+  // One ShopifyQL query per request: Shopify only allows a few analytics queries at a time.
+  const queries = [
+    ['daily', `FROM sales SHOW total_sales, net_sales, orders, net_items_sold TIMESERIES day ${w} ORDER BY day ASC`],
+    ['totals', `FROM sales SHOW total_sales, net_sales, orders, average_order_value, net_items_sold, customers, new_customers, returning_customers, sales_reversals ${w}`],
+    ['products', `FROM sales SHOW net_sales, net_items_sold GROUP BY ONLY TOP 10 product_title ${w} ORDER BY net_sales DESC`],
+    ['channels', `FROM sales SHOW total_sales, orders GROUP BY sales_channel ${w} ORDER BY total_sales DESC LIMIT 10`],
+    ['countries', `FROM sales SHOW total_sales, orders GROUP BY shipping_country ${w} ORDER BY total_sales DESC LIMIT 10`]
+  ];
+  const data = {};
+  for (const [i, [name, q]] of queries.entries()) {
+    Object.assign(data, await shopifyGraphql(store, `{ ${i === 0 ? 'shop { name currencyCode }' : ''} ${QL(name, q)} }`));
+  }
   const out = { currency: data.shop?.currencyCode || 'EUR', shopName: data.shop?.name || store.brand, errors: [] };
   const rows = (k) => {
     const r = data[k];
