@@ -168,6 +168,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <button class="tab" data-tab="social">Social</button>
   <button class="tab" data-tab="newsletter">Newsletter</button>
   <button class="tab" data-tab="shop">Shop</button>
+  <button class="tab" data-tab="ads">Paid media</button>
 </nav>
 
 <main>
@@ -193,6 +194,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlSocChannel" hidden><span>Channel</span><select id="selSocChannel"></select></label>
       <label class="ctl" id="ctlNlBrand" hidden><span>Brand</span><select id="selNlBrand"></select></label>
       <label class="ctl" id="ctlShopBrand" hidden><span>Store</span><select id="selShopBrand"></select></label>
+      <label class="ctl" id="ctlAdsAccount" hidden><span>Ad account</span><select id="selAdsAccount"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
           <button data-days="7">7 days</button>
@@ -295,6 +297,58 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         </div>
       </div>
       <p class="footnote" id="detailNote" hidden>Pick a single site under View to see pages, landing pages, sources and key events.</p>
+    </div>
+
+    <!-- ===== Paid media ===== -->
+    <div id="adsContent" hidden>
+      <div class="kpis" id="aKpis"></div>
+      <p class="footnote" id="aNote"></p>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Trend</h2>
+          <span class="sub" id="aTrendSub"></span>
+          <div class="tools">
+            <div class="seg small" id="aSegMetric">
+              <button data-m="spend">Spend</button>
+              <button data-m="clicks">Clicks</button>
+              <button data-m="conversions">Conversions</button>
+              <button data-m="value">Conv. value</button>
+              <button data-m="roas">ROAS</button>
+            </div>
+          </div>
+        </div>
+        <div class="chartbox"><canvas id="aTrendChart" aria-label="Paid media trend chart"></canvas></div>
+      </section>
+
+      <section class="panel" id="aPanelAccounts">
+        <div class="ph">
+          <h2 class="bar">Ad accounts</h2>
+          <span class="sub">Google Ads · select a row to open that account</span>
+          <div class="tools"><button class="mini" data-csv="aAccounts">Download CSV</button></div>
+        </div>
+        <div class="tw" id="aTblAccounts"></div>
+      </section>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Campaigns</h2>
+          <span class="sub">By spend in this period</span>
+          <div class="tools"><button class="mini" data-csv="aCampaigns">Download CSV</button></div>
+        </div>
+        <div class="tw" id="aTblCampaigns"></div>
+      </section>
+
+      <div class="grid2">
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Devices</h2><span class="sub">Spend</span></div>
+          <div id="aLstDevices"></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><h2 class="bar">Campaign types</h2><span class="sub">Spend</span></div>
+          <div id="aLstTypes"></div>
+        </section>
+      </div>
     </div>
 
     <!-- ===== Shop ===== -->
@@ -608,6 +662,9 @@ const state = {
   shopBrands: null,
   shopBrand: LS.get('shopBrand', 'all'),
   shMetric: 'sales',
+  adsAccounts: null,
+  adsAccount: LS.get('adsAccount', 'all'),
+  aMetric: 'spend',
   sMetric: 'reach',
   metric: 'activeUsers',
   cache: new Map(),
@@ -730,22 +787,23 @@ const derive = (t) => t && ({ ...t,
 let loadSeq = 0;
 function load(){
   syncTabUI();
-  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : state.tab === 'shop' ? loadShop() : loadGa();
+  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : state.tab === 'shop' ? loadShop() : state.tab === 'ads' ? loadAds() : loadGa();
 }
 
 function syncTabUI(){
-  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', shop = state.tab === 'shop', ga = !gsc && !soc && !nl && !shop;
+  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', shop = state.tab === 'shop', adsT = state.tab === 'ads', ga = !gsc && !soc && !nl && !shop && !adsT;
   document.querySelectorAll('.tab[data-tab]').forEach(b => {
     const on = b.dataset.tab === state.tab;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop; $('ctlAdsAccount').hidden = !adsT;
   if (!ga) $('content').hidden = true;
   if (!gsc) $('gscContent').hidden = true;
   if (!soc) $('socContent').hidden = true;
   if (!nl) $('nlContent').hidden = true;
   if (!shop) $('shopContent').hidden = true;
+  if (!adsT) $('adsContent').hidden = true;
 }
 
 async function loadGa(){
@@ -1725,6 +1783,176 @@ function renderShopTrend(){
   });
 }
 
+/* =====================================================================
+   PAID MEDIA (Google Ads via the Google Ads API)
+   ===================================================================== */
+const adsEmpty = () => ({ spend: 0, impressions: 0, clicks: 0, conversions: 0, value: 0 });
+const adsAdd = (a, b) => { if (b) for (const k in a) a[k] += b[k] || 0; return a; };
+const adsDerive = (t) => ({ ...t, ctr: t.impressions ? t.clicks / t.impressions : null, cpc: t.clicks ? t.spend / t.clicks : null,
+  cpa: t.conversions ? t.spend / t.conversions : null, roas: t.spend ? t.value / t.spend : null });
+const fRoas = (v) => v == null ? '–' : v.toFixed(2) + '×';
+
+async function adsFetch(acc, start, end){
+  const key = `ads|${acc.id}|${start}|${end}`;
+  if (state.cache.has(key)) return state.cache.get(key);
+  const v = await api('ads_data', { id: acc.id, ...(acc.login ? { login: acc.login } : {}), start, end });
+  state.cache.set(key, v);
+  return v;
+}
+
+function buildAdsSelect(){
+  const a = state.adsAccounts || [];
+  if (state.adsAccount !== 'all' && !a.some(x => x.id === state.adsAccount)) state.adsAccount = 'all';
+  if (a.length === 1) state.adsAccount = a[0].id;
+  $('selAdsAccount').innerHTML = (a.length > 1 ? '<option value="all">All accounts</option>' : '') + a.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+  $('selAdsAccount').value = state.adsAccount;
+}
+
+async function loadAds(){
+  const seq = ++loadSeq;
+  const R = getRanges(1);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('adsContent').classList.add('dim');
+  try {
+    if (!state.adsAccounts){
+      setStatus('Finding your Google Ads accounts…');
+      state.adsAccounts = (await api('ads_accounts')).accounts || [];
+      buildAdsSelect();
+    }
+    if (seq !== loadSeq) return;
+    if (!state.adsAccounts.length){
+      $('adsContent').hidden = true;
+      showAlert('No Google Ads accounts found for the saved Google sign-in. Check that the account you used in the OAuth Playground has access to your Google Ads accounts.');
+      return;
+    }
+    const targets = state.adsAccount === 'all' ? state.adsAccounts : state.adsAccounts.filter(a => a.id === state.adsAccount);
+    setStatus(targets.length > 1 ? `Loading ${targets.length} ad accounts…` : `Loading ${targets[0].name}…`);
+    const cur = [iso(R.cur.start), iso(R.cur.end)], prev = R.prev ? [iso(R.prev.start), iso(R.prev.end)] : null;
+    const results = await pool(targets, 3, async a => ({ acc: a, cur: await adsFetch(a, cur[0], cur[1]), prev: prev ? await adsFetch(a, prev[0], prev[1]) : null }),
+      done => { if (seq === loadSeq && targets.length > 1) setStatus(`Loading ad accounts… ${done} of ${targets.length}`); });
+    if (seq !== loadSeq) return;
+    const authFail = results.find(r => !r.ok && r.e instanceof AuthError);
+    if (authFail) throw authFail.e;
+    const ok = results.filter(r => r.ok).map(r => r.v);
+    const failed = results.map((r, i) => r.ok ? null : { name: targets[i].name, msg: r.e.message }).filter(Boolean);
+    if (!ok.length){ $('adsContent').hidden = true; showAlert(`Could not load Google Ads data:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`); return; }
+    $('adsContent').hidden = false;
+    renderAds(ok, R);
+    if (failed.length) showAlert(`Some Google Ads data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
+    $('adsContent').hidden = true;
+    showAlert(esc(e.message));
+  } finally {
+    if (seq === loadSeq){ setStatus(''); $('adsContent').classList.remove('dim'); }
+  }
+}
+
+function adsTotal(d){ return Object.values((d && d.daily) || {}).reduce((a, x) => adsAdd(a, x), adsEmpty()); }
+
+function renderAds(results, R){
+  const curs = [...new Set(results.map(r => r.acc.currency))];
+  const cur = curs.length === 1 ? curs[0] : 'EUR';
+  const c = adsDerive(results.reduce((a, r) => adsAdd(a, adsTotal(r.cur)), adsEmpty()));
+  const p = R.prev ? adsDerive(results.reduce((a, r) => adsAdd(a, adsTotal(r.prev)), adsEmpty())) : null;
+  const inv = (d) => { if (d && d.cls !== 'flat') d.cls = d.cls === 'up' ? 'down' : 'up'; return d; };   // lower is better
+  const dd = (a, b, rate) => p && a != null && b != null ? delta(a, b, rate) : null;
+  const kpis = [
+    { label: 'Spend', v: money(c.spend, cur), d: dd(c.spend, p && p.spend) },
+    { label: 'Clicks', v: fNum(c.clicks), d: dd(c.clicks, p && p.clicks), sub: `${fNum(c.impressions)} impressions` },
+    { label: 'Click-through rate', v: c.ctr == null ? '–' : fPct(c.ctr), d: dd(c.ctr, p && p.ctr, true) },
+    { label: 'Avg. cost per click', v: c.cpc == null ? '–' : money(c.cpc, cur), d: inv(dd(c.cpc, p && p.cpc)) },
+    { label: 'Conversions', v: c.conversions.toLocaleString('en-GB', { maximumFractionDigits: 1 }), d: dd(c.conversions, p && p.conversions) },
+    { label: 'Cost per conversion', v: c.cpa == null ? '–' : money(c.cpa, cur), d: inv(dd(c.cpa, p && p.cpa)) },
+    { label: 'Conversion value', v: money(c.value, cur), d: dd(c.value, p && p.value) },
+    { label: 'ROAS', v: fRoas(c.roas), d: dd(c.roas, p && p.roas) }
+  ];
+  $('aKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}${k.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(k.sub)}</div>` : ''}</div>`).join('');
+  $('aNote').textContent = 'Figures come straight from Google Ads. Conversions and conversion value follow the conversion actions set up in each account, so they can differ from Shopify or GA4. ROAS is conversion value divided by spend. For cost per click and cost per conversion, down is good.';
+
+  state.lastAds = { results, R, cur };
+  renderAdsTrend();
+
+  const single = results.length < 2;
+  $('aPanelAccounts').hidden = single;
+  if (!single){
+    const rows = results.map(r => { const t = adsDerive(adsTotal(r.cur)), pt = r.prev ? adsDerive(adsTotal(r.prev)) : null;
+      return { name: r.acc.name, id: r.acc.id, currency: r.acc.currency, ...t, dSpend: pt ? delta(t.spend, pt.spend) : null, dConv: pt ? delta(t.conversions, pt.conversions) : null }; })
+      .sort((a, b) => b.spend - a.spend);
+    const total = rows.reduce((s, r) => s + r.spend, 0) || 1;
+    const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
+    $('aTblAccounts').innerHTML = `<table><thead><tr><th>Account</th><th class="n">Spend</th><th>Share</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Conversions</th><th class="n">Cost/conv.</th><th class="n">ROAS</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="click" data-id="${esc(r.id)}" tabindex="0"><td><b>${esc(r.name)}</b></td>
+      <td class="n">${money(r.spend, r.currency)}${dl(r.dSpend)}</td>
+      <td><div class="share"><i style="width:${(r.spend/total*100).toFixed(1)}%"></i><span>${(r.spend/total*100).toFixed(1)}%</span></div></td>
+      <td class="n">${fNum(r.clicks)}</td><td class="n">${r.ctr == null ? '–' : fPct(r.ctr)}</td>
+      <td class="n">${r.conversions.toLocaleString('en-GB', { maximumFractionDigits: 1 })}${dl(r.dConv)}</td>
+      <td class="n">${r.cpa == null ? '–' : money(r.cpa, r.currency)}</td><td class="n">${fRoas(r.roas)}</td></tr>`).join('')}</tbody></table>`;
+    state.csv.aAccounts = { name: 'ads-accounts', cols: ['name','id','spend','impressions','clicks','ctr','cpc','conversions','cpa','value','roas'], rows };
+  }
+
+  const camps = results.flatMap(r => (r.cur.campaigns || []).map(x => ({ ...adsDerive(x), account: r.acc.name, currency: r.acc.currency }))).sort((a, b) => b.spend - a.spend);
+  const cols = [{ k: 'name', label: 'Campaign' }].concat(single ? [] : [{ k: 'account', label: 'Account' }]).concat([
+    { k: 'type', label: 'Type' }, { k: 'status', label: 'Status' },
+    { k: 'spend', label: 'Spend', n: 1, f: (v) => money(v, cur) }, { k: 'clicks', label: 'Clicks', n: 1, f: fNum },
+    { k: 'ctr', label: 'CTR', n: 1, f: (v) => v == null ? '–' : fPct(v) }, { k: 'conversions', label: 'Conv.', n: 1, f: (v) => (v || 0).toLocaleString('en-GB', { maximumFractionDigits: 1 }) },
+    { k: 'cpa', label: 'Cost/conv.', n: 1, f: (v) => v == null ? '–' : money(v, cur) }, { k: 'roas', label: 'ROAS', n: 1, f: fRoas }]);
+  table('aTblCampaigns', cols, camps, 'aCampaigns');
+
+  const moneyBars = (id, rows, dim) => {
+    if (!rows.length){ $(id).innerHTML = '<p class="empty">No data for this period.</p>'; return; }
+    renderBars(id, rows, dim, 'spend');
+    $(id).querySelectorAll('.br .v').forEach(v => { const s = v.querySelector('small'); const n = Number(v.firstChild.textContent.replace(/[^0-9.-]/g, '')); if (!isNaN(n)) v.firstChild.textContent = money(n, cur); if (s) v.appendChild(s); });
+  };
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  moneyBars('aLstDevices', sumByKey(results.map(r => (r.cur.devices || []).map(d => ({ ...d, device: cap(d.device) }))), 'device', ['spend']).filter(x => x.spend > 0).sort((a, b) => b.spend - a.spend), 'device');
+  moneyBars('aLstTypes', sumByKey(results.map(r => (r.cur.campaigns || []).map(x => ({ type: cap(x.type || 'other'), spend: x.spend }))), 'type', ['spend']).filter(x => x.spend > 0).sort((a, b) => b.spend - a.spend), 'type');
+}
+
+function renderAdsTrend(){
+  const { results, R, cur } = state.lastAds || {};
+  if (!results) return;
+  const m = state.aMetric;
+  document.querySelectorAll('#aSegMetric button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  const toIso = (d) => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  const curDates = dateList(R.cur).map(toIso), prevDates = R.prev ? dateList(R.prev).map(toIso) : [];
+  const day = (part, d) => d == null ? null : results.reduce((a, r) => adsAdd(a, r[part] && r[part].daily && r[part].daily[d]), adsEmpty());
+  let cA = curDates.map(d => day('cur', d)), pA = curDates.map((_, i) => R.prev ? day('prev', prevDates[i] ?? null) : null);
+  const weekly = R.days > 120;
+  if (weekly){
+    const b = (arr) => { const o = []; for (let i = 0; i < arr.length; i += 7){ const s = arr.slice(i, i + 7).filter(Boolean); o.push(s.length ? s.reduce((a, x) => adsAdd(a, x), adsEmpty()) : null); } return o; };
+    cA = b(cA); pA = b(pA);
+  }
+  const val = (x) => !x ? null : m === 'roas' ? (x.spend ? x.value / x.spend : null) : x[m];
+  const cv = cA.map(val), pv = pA.map(val);
+  const idx = curDates.map((_, i) => i).filter(i => i % (weekly ? 7 : 1) === 0);
+  const labels = idx.map(i => fDate(parseISO(curDates[i])));
+  const tips = idx.map(i => weekly ? `Week from ${fDate(parseISO(curDates[i]), true)}` : fDate(parseISO(curDates[i]), true) + (prevDates[i] ? ` vs ${fDate(parseISO(prevDates[i]), true)}` : ''));
+  $('aTrendSub').textContent = weekly ? 'Weekly' : 'Daily';
+  const isMoney = m === 'spend' || m === 'value';
+  const fmt = (v) => v == null ? '–' : isMoney ? money(v, cur) : m === 'roas' ? fRoas(v) : v.toLocaleString('en-GB', { maximumFractionDigits: 1 });
+  const ds = [{ label: 'This period', data: cv, borderColor: '#D6001C', backgroundColor: 'rgba(214,0,28,.08)', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: .25, fill: true, spanGaps: m === 'roas' }];
+  if (R.prev) ds.push({ label: state.compare === 'yoy' ? 'Last year' : 'Previous period', data: pv, borderColor: '#000', borderDash: [4,4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 3, tension: .25, fill: false, spanGaps: m === 'roas' });
+  if (state.aChart) state.aChart.destroy();
+  if (!window.Chart) return;
+  state.aChart = new Chart($('aTrendChart'), {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { boxWidth: 18, boxHeight: 2, color: '#000' } },
+        tooltip: { backgroundColor: '#000', titleFont: { weight: 700 }, padding: 10, cornerRadius: 0,
+          callbacks: { title: (it) => tips[it[0].dataIndex], label: (c) => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 18 }, border: { color: '#000' } },
+        y: { beginAtZero: true, grid: { color: '#ececec' }, border: { display: false }, ticks: { callback: (v) => isMoney ? money(v, cur) : m === 'roas' ? v + '×' : NF.format(v) } }
+      }
+    }
+  });
+}
+
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
 function showAlert(html){ $('alert').innerHTML = html; $('alert').hidden = false; }
 
@@ -2003,13 +2231,20 @@ function bindUI(){
     state.range = { from: f, to: t }; LS.set('range', state.range); load();
   };
   $('selCompare').onchange = () => { state.compare = $('selCompare').value; LS.set('compare', state.compare); load(); };
-  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; if (state.tab === 'shop') state.shopBrands = null; load(); };
+  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; if (state.tab === 'shop') state.shopBrands = null; if (state.tab === 'ads') state.adsAccounts = null; load(); };
 
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => {
     if (state.tab === b.dataset.tab) return;
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
   $('selSocView').onchange = () => { state.socBrand = $('selSocView').value; LS.set('socBrand', state.socBrand); buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); };
+  $('selAdsAccount').onchange = () => { state.adsAccount = $('selAdsAccount').value; LS.set('adsAccount', state.adsAccount); load(); };
+  $('aSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.aMetric = b.dataset.m; renderAdsTrend(); };
+  $('aTblAccounts').onclick = (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr){ state.adsAccount = tr.dataset.id; LS.set('adsAccount', state.adsAccount); $('selAdsAccount').value = state.adsAccount; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  };
+  $('aTblAccounts').onkeydown = (e) => { if (e.key === 'Enter' && e.target.matches('tr[data-id]')) e.target.click(); };
   $('selShopBrand').onchange = () => { state.shopBrand = $('selShopBrand').value; LS.set('shopBrand', state.shopBrand); load(); };
   $('shSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.shMetric = b.dataset.m; renderShopTrend(); };
   $('shTblStores').onclick = (e) => {

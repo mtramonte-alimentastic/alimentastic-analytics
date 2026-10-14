@@ -407,7 +407,7 @@ const cdnJson = (body) => new Response(JSON.stringify(body), { status: 200, head
   'Cache-Control': 'no-store',
   'Netlify-CDN-Cache-Control': 'public, durable, s-maxage=3600, stale-while-revalidate=86400',
   // Cache each distinct request separately (action, brand and dates), per password.
-  'Netlify-Vary': 'query=action|brand|start|end,header=x-dashboard-key'
+  'Netlify-Vary': 'query=action|brand|start|end|id|login,header=x-dashboard-key'
 } });
 
 // ---------- Social posts tab (Windsor post-level export) ----------
@@ -566,6 +566,76 @@ async function shopifySales(store, start, end) {
   return out;
 }
 
+// ---------- Google Ads (uses the same saved Google sign-in; needs the adwords scope) ----------
+const ADS_API = 'https://googleads.googleapis.com/v25';
+function adsFriendly(msg, status) {
+  if (/CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION|not approved for production|test account access/i.test(msg))
+    return 'Your Google Cloud project only has test access to Google Ads. Open the Google Ads API page of the project in Google Cloud Console and apply for Explorer access.';
+  if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|adwords/i.test(msg) && status === 403)
+    return 'The saved Google sign-in does not include Google Ads yet. Redo the OAuth Playground step with the adwords scope added and replace GA_REFRESH_TOKEN in Netlify.';
+  if (/has not been used in project|SERVICE_DISABLED|is disabled/i.test(msg))
+    return 'The Google Ads API is not enabled in your Google Cloud project yet. ' + msg;
+  return msg;
+}
+async function ads(path, body, login) {
+  const token = await accessToken();
+  const r = await fetch(`${ADS_API}/${path}`, {
+    method: body ? 'POST' : 'GET',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(login ? { 'login-customer-id': String(login) } : {}) },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = Array.isArray(j) ? j[0]?.error : j.error;
+    const detail = e?.details?.[0]?.errors?.[0];
+    const code = detail?.errorCode ? Object.values(detail.errorCode)[0] : '';
+    const msg = [detail?.message || e?.message || `Google Ads returned an error (${r.status}).`, code].filter(Boolean).join(' ');
+    throw fail('Google Ads: ' + adsFriendly(msg, r.status), r.status === 401 ? 502 : (r.status >= 500 ? 502 : r.status));
+  }
+  return j;
+}
+async function adsSearch(customerId, login, query) {
+  const rows = []; let pageToken = '';
+  do {
+    const j = await ads(`customers/${customerId}/googleAds:search`, { query, ...(pageToken ? { pageToken } : {}) }, login);
+    rows.push(...(j.results || [])); pageToken = j.nextPageToken || '';
+  } while (pageToken);
+  return rows;
+}
+async function adsAccounts() {
+  const j = await ads('customers:listAccessibleCustomers');
+  const ids = (j.resourceNames || []).map(r => r.split('/')[1]);
+  const out = new Map();
+  for (const id of ids) {
+    let info;
+    try { info = (await adsSearch(id, null, 'SELECT customer.id, customer.descriptive_name, customer.manager, customer.currency_code, customer.status FROM customer'))[0]?.customer; }
+    catch (e) { continue; }   // accounts you can see but not query (e.g. cancelled) are skipped
+    if (!info) continue;
+    if (info.manager) {
+      const kids = await adsSearch(id, id, 'SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager, customer_client.currency_code, customer_client.status FROM customer_client WHERE customer_client.level = 1');
+      kids.map(k => k.customerClient).filter(k => k && !k.manager && k.status === 'ENABLED')
+        .forEach(k => { if (!out.has(String(k.id))) out.set(String(k.id), { id: String(k.id), name: k.descriptiveName || String(k.id), currency: k.currencyCode || 'EUR', login: id }); });
+    } else if (info.status === 'ENABLED' || !info.status) {
+      out.set(String(info.id), { id: String(info.id), name: info.descriptiveName || String(info.id), currency: info.currencyCode || 'EUR', login: null });
+    }
+  }
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+async function adsData(id, login, start, end) {
+  const w = `segments.date BETWEEN '${start}' AND '${end}'`;
+  const M = 'metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value';
+  const m = (x) => ({ spend: Number(x?.costMicros || 0) / 1e6, impressions: Number(x?.impressions || 0), clicks: Number(x?.clicks || 0), conversions: Number(x?.conversions || 0), value: Number(x?.conversionsValue || 0) });
+  const daily = await adsSearch(id, login, `SELECT segments.date, ${M} FROM customer WHERE ${w}`);
+  const camps = await adsSearch(id, login, `SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, ${M} FROM campaign WHERE ${w} AND metrics.impressions > 0 ORDER BY metrics.cost_micros DESC LIMIT 100`);
+  const devices = await adsSearch(id, login, `SELECT segments.device, ${M} FROM customer WHERE ${w}`);
+  return {
+    daily: Object.fromEntries(daily.map(r => [r.segments?.date, m(r.metrics)])),
+    campaigns: camps.map(r => ({ id: r.campaign?.id, name: r.campaign?.name || 'Campaign', status: (r.campaign?.status || '').toLowerCase(),
+      type: (r.campaign?.advertisingChannelType || '').replace(/_/g, ' ').toLowerCase(), ...m(r.metrics) })),
+    devices: devices.map(r => ({ device: (r.segments?.device || 'OTHER').replace(/_/g, ' ').toLowerCase(), ...m(r.metrics) }))
+  };
+}
+
 export default async (req) => {
   if (!authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
@@ -620,6 +690,16 @@ export default async (req) => {
       out.postsConnected = !!pTab;
       out.posts = posts ? parsePosts(posts) : [];
       return json(200, out);
+    }
+    if (action === 'ads_accounts') {
+      return cdnJson({ accounts: await adsAccounts() });
+    }
+    if (action === 'ads_data') {
+      const id = (url.searchParams.get('id') || '').replace(/-/g, ''), login = (url.searchParams.get('login') || '').replace(/-/g, '');
+      const start = isoDay(url.searchParams.get('start')), end = isoDay(url.searchParams.get('end'));
+      if (!/^\d+$/.test(id) || (login && !/^\d+$/.test(login))) return json(400, { error: 'Invalid Google Ads account.' });
+      if (!start || !end || start > end) return json(400, { error: 'Invalid date range.' });
+      return cdnJson(await adsData(id, login || null, start, end));
     }
     if (action === 'shopify_stores') {
       return json(200, { brands: shopifyStores().map(s => s.brand) });
