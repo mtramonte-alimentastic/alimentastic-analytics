@@ -636,6 +636,62 @@ async function adsData(id, login, start, end) {
   };
 }
 
+// ---------- Google Ads from the Windsor sheet (used when ADS_SHEET_TAB is set) ----------
+const ACOLS = {
+  date: ['date'], account_id: ['account_id', 'account id'], account: ['account_name', 'account name'],
+  currency: ['account_currency_code', 'account currency code', 'currency'], campaign_id: ['campaign_id', 'campaign id'],
+  campaign: ['campaign'], status: ['campaign_status', 'campaign status'], type: ['campaign_type', 'campaign type', 'advertising_channel_type', 'advertising channel type'],
+  device: ['device'], spend: ['spend', 'cost'], impressions: ['impressions'], clicks: ['clicks'], conversions: ['conversions'],
+  value: ['conversion_value', 'conversion value', 'conversions_value', 'conversions value']
+};
+const adsSheetCache = { at: 0, rows: null };
+async function adsSheetRows() {
+  if (adsSheetCache.rows && Date.now() - adsSheetCache.at < 10 * 60 * 1000) return adsSheetCache.rows;
+  let id = (process.env.ADS_SHEET_ID || process.env.SOCIAL_SHEET_ID || '').trim();
+  const mm = id.match(/\/d\/([a-zA-Z0-9_-]+)/); if (mm) id = mm[1];
+  if (!id) throw fail('The Google Ads sheet is not connected. Add SOCIAL_SHEET_ID (or ADS_SHEET_ID) in Netlify.');
+  const tab = (process.env.ADS_SHEET_TAB || '').trim();
+  let j;
+  try { j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(`'${tab.replace(/'/g, "''")}'!A1:Z`)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`); }
+  catch (e) { if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check ADS_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400); throw e; }
+  const values = j.values || [];
+  const head = (values[0] || []).map(norm), idx = {};
+  for (const [k, names] of Object.entries(ACOLS)) idx[k] = head.findIndex(h => names.includes(h));
+  const get = (row, k) => idx[k] >= 0 ? row[idx[k]] : null;
+  const rows = [];
+  for (const row of values.slice(1)) {
+    const date = toIsoDate(get(row, 'date')); if (!date) continue;
+    const aid = String(get(row, 'account_id') ?? '').replace(/\D/g, '');
+    const name = String(get(row, 'account') ?? '').trim();
+    if (!aid && !name) continue;
+    rows.push({ date, aid: aid || name, account: name || aid, currency: String(get(row, 'currency') ?? '').trim() || 'EUR',
+      cid: String(get(row, 'campaign_id') ?? get(row, 'campaign') ?? '').trim(), campaign: String(get(row, 'campaign') ?? '').trim() || 'Campaign',
+      status: String(get(row, 'status') ?? '').trim().toLowerCase(), type: String(get(row, 'type') ?? '').trim().replace(/_/g, ' ').toLowerCase(),
+      device: String(get(row, 'device') ?? '').trim().replace(/_/g, ' ').toLowerCase() || 'other',
+      spend: num(get(row, 'spend')) || 0, impressions: num(get(row, 'impressions')) || 0, clicks: num(get(row, 'clicks')) || 0,
+      conversions: num(get(row, 'conversions')) || 0, value: num(get(row, 'value')) || 0 });
+  }
+  adsSheetCache.at = Date.now(); adsSheetCache.rows = rows;
+  return rows;
+}
+async function adsSheetAccounts() {
+  const m = new Map();
+  (await adsSheetRows()).forEach(r => { if (!m.has(r.aid)) m.set(r.aid, { id: r.aid, name: r.account, currency: r.currency, login: null }); });
+  return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+async function adsSheetData(id, start, end) {
+  const rows = (await adsSheetRows()).filter(r => r.aid === id && r.date >= start && r.date <= end);
+  const add = (o, r) => { o.spend += r.spend; o.impressions += r.impressions; o.clicks += r.clicks; o.conversions += r.conversions; o.value += r.value; return o; };
+  const z = () => ({ spend: 0, impressions: 0, clicks: 0, conversions: 0, value: 0 });
+  const daily = {}, camps = new Map(), devices = new Map();
+  rows.forEach(r => {
+    add(daily[r.date] ||= z(), r);
+    const c = camps.get(r.cid) || { id: r.cid, name: r.campaign, status: r.status, type: r.type, ...z() }; add(c, r); camps.set(r.cid, c);
+    add(devices.get(r.device) || (devices.set(r.device, { device: r.device, ...z() }), devices.get(r.device)), r);
+  });
+  return { daily, campaigns: [...camps.values()].filter(c => c.impressions > 0 || c.spend > 0).sort((a, b) => b.spend - a.spend).slice(0, 100), devices: [...devices.values()] };
+}
+
 export default async (req) => {
   if (!authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
@@ -692,14 +748,14 @@ export default async (req) => {
       return json(200, out);
     }
     if (action === 'ads_accounts') {
-      return cdnJson({ accounts: await adsAccounts() });
+      return cdnJson({ source: process.env.ADS_SHEET_TAB ? 'windsor' : 'api', accounts: process.env.ADS_SHEET_TAB ? await adsSheetAccounts() : await adsAccounts() });
     }
     if (action === 'ads_data') {
       const id = (url.searchParams.get('id') || '').replace(/-/g, ''), login = (url.searchParams.get('login') || '').replace(/-/g, '');
       const start = isoDay(url.searchParams.get('start')), end = isoDay(url.searchParams.get('end'));
       if (!/^\d+$/.test(id) || (login && !/^\d+$/.test(login))) return json(400, { error: 'Invalid Google Ads account.' });
       if (!start || !end || start > end) return json(400, { error: 'Invalid date range.' });
-      return cdnJson(await adsData(id, login || null, start, end));
+      return cdnJson(process.env.ADS_SHEET_TAB ? await adsSheetData(id, start, end) : await adsData(id, login || null, start, end));
     }
     if (action === 'shopify_stores') {
       return json(200, { brands: shopifyStores().map(s => s.brand) });

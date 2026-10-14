@@ -1817,13 +1817,16 @@ async function loadAds(){
   try {
     if (!state.adsAccounts){
       setStatus('Finding your Google Ads accounts…');
-      state.adsAccounts = (await api('ads_accounts')).accounts || [];
+      const aj = await api('ads_accounts');
+      state.adsAccounts = aj.accounts || []; state.adsSource = aj.source || 'api';
       buildAdsSelect();
     }
     if (seq !== loadSeq) return;
     if (!state.adsAccounts.length){
       $('adsContent').hidden = true;
-      showAlert('No Google Ads accounts found for the saved Google sign-in. Check that the account you used in the OAuth Playground has access to your Google Ads accounts.');
+      showAlert(state.adsSource === 'windsor'
+        ? 'The Google Ads tab in the sheet has no rows yet. Run the Windsor Google Ads export once, then click Refresh.'
+        : 'No Google Ads accounts found for the saved Google sign-in. Check that the account you used in the OAuth Playground has access to your Google Ads accounts.');
       return;
     }
     const targets = state.adsAccount === 'all' ? state.adsAccounts : state.adsAccounts.filter(a => a.id === state.adsAccount);
@@ -1869,7 +1872,7 @@ function renderAds(results, R){
     { label: 'ROAS', v: fRoas(c.roas), d: dd(c.roas, p && p.roas) }
   ];
   $('aKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}${k.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(k.sub)}</div>` : ''}</div>`).join('');
-  $('aNote').textContent = 'Figures come straight from Google Ads. Conversions and conversion value follow the conversion actions set up in each account, so they can differ from Shopify or GA4. ROAS is conversion value divided by spend. For cost per click and cost per conversion, down is good.';
+  $('aNote').textContent = (state.adsSource === 'windsor' ? 'Google Ads data from Windsor\'s daily export, up to yesterday. ' : 'Figures come straight from Google Ads. ') + 'Conversions and conversion value follow the conversion actions set up in each account, so they can differ from Shopify or GA4. ROAS is conversion value divided by spend. For cost per click and cost per conversion, down is good.';
 
   state.lastAds = { results, R, cur };
   renderAdsTrend();

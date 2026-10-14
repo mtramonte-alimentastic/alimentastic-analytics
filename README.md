@@ -8,4 +8,4 @@ Netlify environment variables: either `GA_OAUTH_CLIENT_ID`, `GA_OAUTH_CLIENT_SEC
 
 Newsletter tab: `KLAVIYO_ACCOUNTS` – one line per brand, `Brand name: pk_...` (Klaviyo private read-only key).
 Shop tab: `SHOPIFY_STORES` – stores separated by `;`, each `Brand: store.myshopify.com | CLIENT_ID | CLIENT_SECRET` (Dev Dashboard app with read_reports).
-Paid media tab: Google Ads via the same Google sign-in (GA_REFRESH_TOKEN must include the adwords scope; Cloud project needs Explorer access).
+Paid media tab: Google Ads from the Windsor export tab (`ADS_SHEET_TAB`, same sheet as SOCIAL_SHEET_ID or `ADS_SHEET_ID`). Without ADS_SHEET_TAB it uses the Google Ads API (needs the adwords scope and Explorer access).
