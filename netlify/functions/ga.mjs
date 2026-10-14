@@ -747,10 +747,10 @@ export default async (req) => {
       out.posts = posts ? parsePosts(posts) : [];
       return json(200, out);
     }
-    if (action === 'ads_accounts') {
+    if (action === 'pm_accounts' || action === 'ads_accounts') {
       return cdnJson({ source: process.env.ADS_SHEET_TAB ? 'windsor' : 'api', accounts: process.env.ADS_SHEET_TAB ? await adsSheetAccounts() : await adsAccounts() });
     }
-    if (action === 'ads_data') {
+    if (action === 'pm_data' || action === 'ads_data') {
       const id = (url.searchParams.get('id') || '').replace(/-/g, ''), login = (url.searchParams.get('login') || '').replace(/-/g, '');
       const start = isoDay(url.searchParams.get('start')), end = isoDay(url.searchParams.get('end'));
       if (!/^\d+$/.test(id) || (login && !/^\d+$/.test(login))) return json(400, { error: 'Invalid Google Ads account.' });
