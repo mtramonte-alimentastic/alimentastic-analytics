@@ -786,7 +786,7 @@ const derive = (t) => t && ({ ...t,
 /* ---------- Main load ---------- */
 let loadSeq = 0;
 function load(){
-  syncTabUI();
+  try { syncTabUI(); } catch(e){ showCrash(e.message); return; }
   return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : state.tab === 'shop' ? loadShop() : state.tab === 'ads' ? loadAds() : loadGa();
 }
 
@@ -2334,8 +2334,22 @@ async function enterDashboard(){
   if (firstRun && state.properties.length > 1) openSites();
 }
 
+// Show any unexpected error on screen instead of failing silently.
+const DASHBOARD_VERSION = '2026-10-14.2';
+function showCrash(msg){
+  try {
+    setStatus('');
+    ['content','gscContent','socContent','nlContent','shopContent','adsContent'].forEach(id => { const el = $(id); if (el) el.classList.remove('dim'); });
+    showAlert(`Something went wrong on this page: <b>${esc(msg)}</b><br><span class="note">Dashboard version ${DASHBOARD_VERSION}. Please send a screenshot of this message.</span>`);
+  } catch(e){}
+}
+window.addEventListener('error', (e) => showCrash(e.message || 'Unknown error'));
+window.addEventListener('unhandledrejection', (e) => showCrash((e.reason && (e.reason.message || String(e.reason))) || 'Unknown error'));
+
 (function boot(){
   bindUI();
+  const v = document.createElement('p'); v.className = 'footnote'; v.style.cssText = 'text-align:center;margin:40px 0 0';
+  v.textContent = 'Dashboard version ' + DASHBOARD_VERSION; document.querySelector('main').appendChild(v);
   enterDashboard();
 })();
 </script>
