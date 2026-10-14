@@ -123,6 +123,14 @@ td .dl{font-size:12.5px;font-weight:700;margin-left:6px}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .post a:hover{text-decoration:underline}
 .post small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.ovh{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:26px 0 0;color:var(--black)}
+.ovh + .kpis{margin-top:8px}
+.kpi.go{cursor:pointer}
+.kpi.go:hover{background:var(--surface)}
+.kpi .src{font-size:11.5px;color:var(--muted);margin-top:6px}
+.movers{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.mover{border:1px solid var(--rule);padding:10px 12px;font-size:14px}
+.mover b{font-weight:900}
 .share{display:flex;align-items:center;gap:8px;min-width:120px}
 .share i{display:block;height:8px;background:var(--black)}
 .share span{font-size:12.5px;color:var(--muted);min-width:38px}
@@ -163,6 +171,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </header>
 
 <nav class="tabs" aria-label="Data sources">
+  <button class="tab" data-tab="overview">Overview</button>
   <button class="tab active" data-tab="ga" aria-current="page">Web analytics</button>
   <button class="tab" data-tab="gsc">Search Console</button>
   <button class="tab" data-tab="social">Social</button>
@@ -194,6 +203,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlSocChannel" hidden><span>Channel</span><select id="selSocChannel"></select></label>
       <label class="ctl" id="ctlNlBrand" hidden><span>Brand</span><select id="selNlBrand"></select></label>
       <label class="ctl" id="ctlShopBrand" hidden><span>Store</span><select id="selShopBrand"></select></label>
+      <label class="ctl" id="ctlOvGroup" hidden><span>Group</span><select id="selOvGroup"><option value="all">All brands</option><option value="Alimentastic">Alimentastic brands</option><option value="REPLOID">REPLOID brands</option></select></label>
+      <label class="ctl" id="ctlOvBrand" hidden><span>Brand</span><select id="selOvBrand"></select></label>
       <label class="ctl" id="ctlPmPlatform" hidden><span>Platform</span><select id="selPmPlatform"></select></label>
       <label class="ctl" id="ctlPmAccount" hidden><span>Ad account</span><select id="selPmAccount"></select></label>
       <div class="ctl"><span>Date range</span>
@@ -298,6 +309,29 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
         </div>
       </div>
       <p class="footnote" id="detailNote" hidden>Pick a single site under View to see pages, landing pages, sources and key events.</p>
+    </div>
+
+    <!-- ===== Overview ===== -->
+    <div id="ovContent" hidden>
+      <h3 class="ovh">Revenue</h3><div class="kpis" id="ovRev"></div>
+      <h3 class="ovh">Efficiency</h3><div class="kpis" id="ovEff"></div>
+      <h3 class="ovh">Growth</h3><div class="kpis" id="ovGrow"></div>
+      <h3 class="ovh">Reach &amp; engagement</h3><div class="kpis" id="ovReach"></div>
+      <p class="footnote" id="ovNote"></p>
+
+      <section class="panel">
+        <div class="ph"><h2 class="bar">Biggest movers</h2><span class="sub">Largest changes against the previous period</span></div>
+        <div id="ovMovers"></div>
+      </section>
+
+      <section class="panel">
+        <div class="ph">
+          <h2 class="bar">Brands</h2>
+          <span class="sub">Select a row to focus on that brand</span>
+          <div class="tools"><button class="mini" data-csv="ovBrands">Download CSV</button></div>
+        </div>
+        <div class="tw" id="ovTblBrands"></div>
+      </section>
     </div>
 
     <!-- ===== Paid media ===== -->
@@ -650,7 +684,7 @@ const state = {
   view: LS.get('view', 'portfolio'),
   range: LS.get('range', {days: 28}),
   compare: LS.get('compare', 'prev'),
-  tab: (LS.get('tab', 'ga') === 'ads' ? 'paid' : LS.get('tab', 'ga')),
+  tab: (LS.get('tab', 'overview') === 'ads' ? 'paid' : LS.get('tab', 'overview')),
   gscView: LS.get('gscView', 'portfolio'),
   gscSites: null,
   gMetric: 'clicks',
@@ -666,6 +700,9 @@ const state = {
   adsAccounts: null,
   adsAccount: LS.get('pmAccount', 'all'),
   pmPlatform: LS.get('pmPlatform', 'all'),
+  ovGroup: LS.get('ovGroup', 'all'),
+  ovBrand: LS.get('ovBrand', 'all'),
+  ov: {},
   pmMulti: false,
   aMetric: 'spend',
   sMetric: 'reach',
@@ -790,23 +827,24 @@ const derive = (t) => t && ({ ...t,
 let loadSeq = 0;
 function load(){
   try { syncTabUI(); } catch(e){ showCrash(e.message); return; }
-  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : state.tab === 'shop' ? loadShop() : state.tab === 'paid' ? loadAds() : loadGa();
+  return state.tab === 'gsc' ? loadGsc() : state.tab === 'social' ? loadSocial() : state.tab === 'newsletter' ? loadNewsletter() : state.tab === 'shop' ? loadShop() : state.tab === 'paid' ? loadAds() : state.tab === 'overview' ? loadOverview() : loadGa();
 }
 
 function syncTabUI(){
-  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', shop = state.tab === 'shop', adsT = state.tab === 'paid', ga = !gsc && !soc && !nl && !shop && !adsT;
+  const gsc = state.tab === 'gsc', soc = state.tab === 'social', nl = state.tab === 'newsletter', shop = state.tab === 'shop', adsT = state.tab === 'paid', ov = state.tab === 'overview', ga = !gsc && !soc && !nl && !shop && !adsT && !ov;
   document.querySelectorAll('.tab[data-tab]').forEach(b => {
     const on = b.dataset.tab === state.tab;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop; $('ctlPmAccount').hidden = !adsT; $('ctlPmPlatform').hidden = !adsT || !state.pmMulti;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop; $('ctlPmAccount').hidden = !adsT; $('ctlOvGroup').hidden = !ov; $('ctlOvBrand').hidden = !ov; $('ctlPmPlatform').hidden = !adsT || !state.pmMulti;
   if (!ga) $('content').hidden = true;
   if (!gsc) $('gscContent').hidden = true;
   if (!soc) $('socContent').hidden = true;
   if (!nl) $('nlContent').hidden = true;
   if (!shop) $('shopContent').hidden = true;
   if (!adsT) $('pmContent').hidden = true;
+  if (!ov) $('ovContent').hidden = true;
 }
 
 async function loadGa(){
@@ -1974,6 +2012,203 @@ function renderAdsTrend(){
   });
 }
 
+/* =====================================================================
+   OVERVIEW — headline KPIs across all sources, by brand
+   Brand mapping: which account in each source belongs to which brand.
+   GA4 and Search Console match on part of the name; everything else matches exactly.
+   ===================================================================== */
+const OV_BRANDS = [
+  { brand: 'feelfood', group: 'Alimentastic', ga: [], gsc: ['feel-food', 'feelfood'], social: ['feel_food_com'], klaviyo: ['feelfood'], shop: ['feelfood'],
+    gads: [], meta: ['meta_683751865860519'] },
+  { brand: 'Moments', group: 'Alimentastic', ga: ['moments'], gsc: ['moments'], social: ['biogena.moments'], klaviyo: ['moments', 'biogena moments'], shop: ['moments'],
+    gads: [], meta: ['meta_724589327042473', 'meta_554233402990395'] },
+  { brand: 'getyourwellbeing', group: 'Alimentastic', ga: ['getyourwellbeing'], gsc: ['getyourwellbeing'], social: ['getyourwellbeing'], klaviyo: ['getyourwellbeing', 'gyw'], shop: ['getyourwellbeing'],
+    gads: ['1538152539'], meta: ['meta_890352349580726'] },
+  { brand: 'Alimentastic', group: 'Alimentastic', ga: ['alimentastic'], gsc: ['alimentastic'], social: ['alimentastic_houseofbrands', 'alimentastic house of brands'], klaviyo: ['alimentastic'], shop: ['alimentastic'],
+    gads: [], meta: ['meta_1677425976362685'] },
+  { brand: 'Beak Bandits', group: 'REPLOID', ga: ['beak bandits'], gsc: ['beak', 'beakbandits'], social: ['beakbandits'], klaviyo: ['beak bandits'], shop: ['beak bandits'],
+    gads: ['5619576931'], meta: [] },
+  { brand: 'Schnauze & Co.', group: 'REPLOID', ga: ['schnauze'], gsc: ['schnauze'], social: ['schnauze.und.co'], klaviyo: ['schnauze'], shop: ['schnauze & co.'],
+    gads: [], meta: ['meta_528152425309243'] },
+  { brand: 'REPLOID (portfolio)', group: 'REPLOID', ga: [], gsc: [], social: [], klaviyo: [], shop: [], gads: ['9147662980'], meta: [] }
+];
+const OV_EXCLUDE_GA = ['webstream'];
+const OV_GROUP = Object.fromEntries(OV_BRANDS.map(b => [b.brand, b.group]));
+function ovMap(src, key){
+  const k = String(key || '').toLowerCase();
+  const partial = src === 'ga' || src === 'gsc';
+  for (const b of OV_BRANDS) if ((b[src] || []).some(t => partial ? k.includes(t.toLowerCase()) : k === t.toLowerCase())) return b.brand;
+  return 'Unassigned';
+}
+
+const OV_SOURCES = ['Shop', 'Paid media', 'Web analytics', 'Search Console', 'Social', 'Newsletter'];
+async function ovOnce(key, fn){ if (state.ov[key] === undefined) state.ov[key] = await fn(); return state.ov[key]; }
+
+async function loadOverview(){
+  const seq = ++loadSeq;
+  const R = getRanges(1), Rg = getRanges(3);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('ovContent').hidden = false;
+  const data = {}, issues = [], done = new Set();
+  const B = (b) => data[b] ||= { cur: {}, prev: {} };
+  const add = (b, part, k, v) => { if (v == null || isNaN(v)) return; const o = B(b)[part]; o[k] = (o[k] || 0) + v; };
+  const cur = [iso(R.cur.start), iso(R.cur.end)], prev = R.prev ? [iso(R.prev.start), iso(R.prev.end)] : null;
+  const both = (fn) => [['cur', cur], ...(prev ? [['prev', prev]] : [])].map(([part, w]) => fn(part, w));
+  const draw = () => { if (seq === loadSeq) renderOverview(data, R, done, issues); };
+  draw();
+
+  const tasks = {
+    'Shop': async () => {
+      const brands = await ovOnce('shopBrands', async () => (await api('shopify_stores')).brands || []);
+      const r = await pool(brands, 3, async b => { for (const [part, w] of both((p, w) => [p, w])) { const d = await shopFetch(b, w[0], w[1]); const br = ovMap('shop', b);
+        add(br, part, 'sales', d.totals.sales); add(br, part, 'orders', d.totals.orders); add(br, part, 'newCustomers', d.totals.newCustomers); } });
+      r.forEach((x, i) => { if (!x.ok) issues.push(`Shop (${brands[i]}): ${x.e.message}`); });
+    },
+    'Paid media': async () => {
+      const accs = await ovOnce('pmAccounts', async () => (await api('pm_accounts')).accounts || []);
+      const r = await pool(accs, 3, async a => { for (const [part, w] of both((p, w) => [p, w])) { const t = adsTotal(await adsFetch(a, w[0], w[1]));
+        const meta = pmPlat(a) === 'meta', br = ovMap(meta ? 'meta' : 'gads', a.id);
+        add(br, part, 'spend', t.spend); add(br, part, meta ? 'spendMeta' : 'spendGoogle', t.spend); } });
+      r.forEach((x, i) => { if (!x.ok) issues.push(`Paid media (${accs[i].name}): ${x.e.message}`); });
+    },
+    'Web analytics': async () => {
+      const props = (state.properties || []).filter(p => !OV_EXCLUDE_GA.some(x => p.name.toLowerCase().includes(x)));
+      const r = await pool(props, CONFIG.CONCURRENCY, async p => { const d = await fetchCore(p, R); const br = ovMap('ga', p.name);
+        add(br, 'cur', 'users', d.totals.cur.activeUsers); if (d.totals.prev) add(br, 'prev', 'users', d.totals.prev.activeUsers); });
+      r.forEach((x, i) => { if (!x.ok) issues.push(`Web analytics (${props[i].name}): ${x.e.message}`); });
+    },
+    'Search Console': async () => {
+      const sites = (await ovOnce('gscSites', loadGscSites)).filter(s => !s.covered);
+      const r = await pool(sites, CONFIG.CONCURRENCY, async s => { const d = await fetchGscCore(s, Rg); const br = ovMap('gsc', s.name);
+        add(br, 'cur', 'gscClicks', d.totals.cur.clicks); if (d.totals.prev) add(br, 'prev', 'gscClicks', d.totals.prev.clicks); });
+      r.forEach((x, i) => { if (!x.ok) issues.push(`Search Console (${sites[i].name}): ${x.e.message}`); });
+    },
+    'Social': async () => {
+      const s = await ovOnce('social', async () => await api('social'));
+      const inW = (d, w) => d >= w[0] && d <= w[1];
+      both((part, w) => (s.rows || []).filter(r => !r.snapshot && inW(r.date, w)).forEach(r => { const br = ovMap('social', r.account);
+        add(br, part, 'reach', r.reach); add(br, part, 'socialImpr', r.impressions); add(br, part, 'socialEng', r.engagements); add(br, part, 'newFollowers', r.newFollowers); }));
+      // Latest known follower count per account up to the morning after the period
+      const until = iso(addDays(R.cur.end, 1)), latest = new Map();
+      (s.rows || []).forEach(r => { if (r.followers == null || r.date > until) return; const k = r.platform + '|' + r.account; const c = latest.get(k); if (!c || r.date > c.date) latest.set(k, r); });
+      latest.forEach(r => add(ovMap('social', r.account), 'cur', 'followers', r.followers));
+    },
+    'Newsletter': async () => {
+      const brands = await ovOnce('nlBrands', async () => (await api('klaviyo_accounts')).brands || []);
+      const r = await pool(brands, 2, async b => {
+        const br = ovMap('klaviyo', b);
+        for (const [part, w] of both((p, w) => [p, w])) { const t = nlTotals(await nlFetch('klaviyo_daily', b, { start: w[0], end: w[1] }));
+          add(br, part, 'netSubs', t.subscribed - t.unsubscribed); if (t.hasRevenue) add(br, part, 'emailRevenue', t.revenue); }
+        const l = await nlFetch('klaviyo_lists', b); const top = (l.lists || [])[0]; if (top && top.profiles != null) add(br, 'cur', 'subscribers', top.profiles);
+      });
+      r.forEach((x, i) => { if (!x.ok) issues.push(`Newsletter (${brands[i]}): ${x.e.message}`); });
+    }
+  };
+  setStatus(`Loading ${OV_SOURCES.length} sources…`);
+  await Promise.all(OV_SOURCES.map(async name => {
+    try { await tasks[name](); }
+    catch(e){ if (e instanceof AuthError){ handleAuthLost(e); return; } issues.push(`${name}: ${e.message}`); }
+    done.add(name);
+    if (seq === loadSeq){ setStatus(done.size < OV_SOURCES.length ? `Loading sources… ${done.size} of ${OV_SOURCES.length}` : ''); draw(); }
+  }));
+  if (seq !== loadSeq) return;
+  setStatus('');
+  if (issues.length) showAlert(`Some sources could not be loaded, so their tiles are incomplete:<ul>${issues.slice(0, 8).map(i => `<li>${esc(i)}</li>`).join('')}</ul>`);
+}
+
+function ovBrandsInView(data){
+  return Object.keys(data).filter(b => (state.ovGroup === 'all' || (OV_GROUP[b] || 'Other') === state.ovGroup) && (state.ovBrand === 'all' || b === state.ovBrand));
+}
+function ovSum(data, brands, part){
+  const t = {};
+  brands.forEach(b => { const o = data[b][part]; for (const k in o) t[k] = (t[k] || 0) + o[k]; });
+  t.roas = t.spend ? (t.sales || 0) / t.spend : null;
+  t.cac = t.newCustomers ? (t.spend || 0) / t.newCustomers : null;
+  t.engRate = t.socialImpr ? (t.socialEng || 0) / t.socialImpr : null;
+  t.aov = t.orders ? (t.sales || 0) / t.orders : null;
+  return t;
+}
+
+function buildOvBrandSelect(data){
+  const names = Object.keys(data).filter(b => state.ovGroup === 'all' || (OV_GROUP[b] || 'Other') === state.ovGroup)
+    .sort((a, b) => (a === 'Unassigned') - (b === 'Unassigned') || a.localeCompare(b));
+  if (state.ovBrand !== 'all' && !names.includes(state.ovBrand) && Object.keys(data).length) state.ovBrand = 'all';
+  const html = '<option value="all">All brands</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  if ($('selOvBrand').innerHTML !== html) $('selOvBrand').innerHTML = html;
+  $('selOvBrand').value = state.ovBrand;
+}
+
+function renderOverview(data, R, done, issues){
+  buildOvBrandSelect(data);
+  const brands = ovBrandsInView(data);
+  const c = ovSum(data, brands, 'cur'), p = R.prev ? ovSum(data, brands, 'prev') : null;
+  const ready = (src) => done.has(src);
+  const inv = (d) => { if (d && d.cls !== 'flat') d.cls = d.cls === 'up' ? 'down' : 'up'; return d; };
+  const neutral = (d) => { if (d) d.cls = 'up'; return d; };   // spend changes are neither good nor bad by themselves
+  const dd = (k, rate) => p && c[k] != null && p[k] != null && p[k] !== 0 ? delta(c[k], p[k], rate) : null;
+  const tile = (o) => {
+    const val = !ready(o.src) ? '…' : (o.v == null ? '–' : o.v);
+    return `<div class="kpi go" data-go="${o.go}" title="Open ${esc(o.go === 'ga' ? 'Web analytics' : o.src)}"><div class="lbl">${esc(o.label)}</div><div class="val">${val}</div>${ready(o.src) && o.d ? `<div class="d ${o.d.cls}">${o.d.txt}</div>` : ''}${ready(o.src) && o.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(o.sub)}</div>` : ''}<div class="src">${esc(o.srcLabel || o.src)}</div></div>`;
+  };
+  const eur = (v) => v == null ? null : money(v, 'EUR');
+  const shopAndAds = ready('Shop') && ready('Paid media');
+  const audience = (c.followers || 0) + (c.subscribers || 0);
+  const netAud = (c.netSubs || 0) + (c.newFollowers || 0);
+  $('ovRev').innerHTML = [
+    tile({ label: 'Total sales', v: c.sales != null ? eur(c.sales) : null, d: dd('sales'), src: 'Shop', go: 'shop', srcLabel: 'Shopify' }),
+    tile({ label: 'Orders', v: c.orders != null ? fNum(c.orders) : null, d: dd('orders'), sub: c.aov != null ? `Avg. order value ${eur(c.aov)}` : '', src: 'Shop', go: 'shop', srcLabel: 'Shopify' }),
+    tile({ label: 'New customers', v: c.newCustomers != null ? fNum(c.newCustomers) : null, d: dd('newCustomers'), src: 'Shop', go: 'shop', srcLabel: 'Shopify' })
+  ].join('');
+  $('ovEff').innerHTML = [
+    tile({ label: 'Ad spend', v: c.spend != null ? eur(c.spend) : null, d: neutral(dd('spend')), sub: c.spend ? `Google ${eur(c.spendGoogle || 0)} · Meta ${eur(c.spendMeta || 0)}` : '', src: 'Paid media', go: 'paid', srcLabel: 'Google Ads + Meta' }),
+    tile({ label: 'Blended ROAS', v: shopAndAds ? (c.roas == null ? null : c.roas.toFixed(2) + '×') : '…', d: shopAndAds ? dd('roas') : null, sub: 'Total sales ÷ ad spend', src: 'Paid media', go: 'paid', srcLabel: 'Shopify ÷ ads' }),
+    tile({ label: 'Cost per new customer', v: shopAndAds ? (c.cac == null ? null : eur(c.cac)) : '…', d: shopAndAds ? inv(dd('cac')) : null, sub: 'Ad spend ÷ new customers', src: 'Paid media', go: 'paid', srcLabel: 'Ads ÷ Shopify' })
+  ].join('');
+  $('ovGrow').innerHTML = [
+    tile({ label: 'Website users', v: c.users != null ? fNum(c.users) : null, d: dd('users'), src: 'Web analytics', go: 'ga', srcLabel: 'GA4' }),
+    tile({ label: 'Organic search clicks', v: c.gscClicks != null ? fNum(c.gscClicks) : null, d: dd('gscClicks'), sub: 'Up to 3 days ago', src: 'Search Console', go: 'gsc', srcLabel: 'Search Console' }),
+    tile({ label: 'Owned audience', v: ready('Social') && ready('Newsletter') ? (audience ? fNum(audience) : null) : '…', sub: `${netAud >= 0 ? '+' : ''}${fNum(netAud)} net this period`, src: 'Social', go: 'social', srcLabel: 'Followers + subscribers' })
+  ].join('');
+  $('ovReach').innerHTML = [
+    tile({ label: 'Social reach', v: c.reach != null ? fNum(c.reach) : null, d: dd('reach'), sub: c.engRate != null ? `Engagement rate ${fPct(c.engRate)}` : '', src: 'Social', go: 'social', srcLabel: 'Instagram + LinkedIn' }),
+    tile({ label: 'Email revenue', v: c.emailRevenue != null ? eur(c.emailRevenue) : null, d: dd('emailRevenue'), sub: c.sales && c.emailRevenue != null ? `${fPct(c.emailRevenue / c.sales)} of total sales` : '', src: 'Newsletter', go: 'newsletter', srcLabel: 'Klaviyo' })
+  ].join('');
+  $('ovNote').textContent = 'Blended ROAS and cost per new customer use real Shopify sales and new customers, not what Google or Meta report. Spend in accounts that serve several brands (REPLOID portfolio) counts in the totals but not per brand. Owned audience = latest follower counts + main newsletter list. Click a tile to open the detailed tab.';
+
+  // Biggest movers
+  const MOVE = [['sales', 'Total sales', 200], ['spend', 'Ad spend', 50], ['users', 'Website users', 100], ['gscClicks', 'Organic search clicks', 50], ['reach', 'Social reach', 500], ['emailRevenue', 'Email revenue', 100], ['orders', 'Orders', 10]];
+  const moves = [];
+  if (R.prev) brands.filter(b => b !== 'Unassigned').forEach(b => MOVE.forEach(([k, label, min]) => {
+    const a = data[b].cur[k], z = data[b].prev[k];
+    if (a == null || z == null || z < min) return;
+    const pct = (a - z) / z; if (Math.abs(pct) < 0.1) return;
+    moves.push({ b, label, pct, k });
+  }));
+  moves.sort((x, y) => Math.abs(y.pct) - Math.abs(x.pct));
+  const good = (m) => m.k === 'spend' ? null : m.pct > 0;
+  $('ovMovers').innerHTML = done.size < OV_SOURCES.length && !moves.length ? '<p class="empty">Waiting for data…</p>'
+    : !moves.length ? '<p class="empty">No big changes against the previous period (none over 10%).</p>'
+    : `<div class="movers">${moves.slice(0, 8).map(m => `<div class="mover"><b>${esc(m.b)}</b> · ${esc(m.label)} <span class="${good(m) == null ? 'flat' : good(m) ? 'up' : 'down'}" style="font-weight:700">${m.pct > 0 ? '▲' : '▼'} ${Math.abs(m.pct * 100).toFixed(0)}%</span></div>`).join('')}</div>`;
+
+  // Brand table
+  const rows = brands.map(b => { const x = ovSum(data, [b], 'cur'), y = R.prev ? ovSum(data, [b], 'prev') : null;
+    const d = (k) => y && x[k] != null && y[k] ? delta(x[k], y[k]) : null;
+    return { brand: b, group: OV_GROUP[b] || 'Other', sales: x.sales, dSales: d('sales'), spend: x.spend, dSpend: d('spend') && { ...d('spend'), cls: 'up' }, roas: x.sales != null && x.spend ? x.roas : null,
+      newCustomers: x.newCustomers, users: x.users, dUsers: d('users'), reach: x.reach, dReach: d('reach'), audience: (x.followers || 0) + (x.subscribers || 0) || null, netAud: (x.netSubs || 0) + (x.newFollowers || 0) };
+  }).sort((a, b) => (a.brand === 'Unassigned') - (b.brand === 'Unassigned') || (b.sales || 0) - (a.sales || 0) || (b.spend || 0) - (a.spend || 0) || (b.users || 0) - (a.users || 0));
+  const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
+  const n = (v, f) => v == null ? '–' : f(v);
+  $('ovTblBrands').innerHTML = rows.length ? `<table><thead><tr><th>Brand</th><th>Group</th><th class="n">Total sales</th><th class="n">Ad spend</th><th class="n">Blended ROAS</th><th class="n">New customers</th><th class="n">Website users</th><th class="n">Social reach</th><th class="n">Owned audience</th></tr></thead><tbody>${rows.map(r => `
+    <tr${r.brand === 'Unassigned' ? '' : ` class="click" data-brand="${esc(r.brand)}" tabindex="0"`}><td><b>${esc(r.brand)}</b></td><td>${esc(r.group)}</td>
+    <td class="n">${n(r.sales, eur)}${dl(r.dSales)}</td><td class="n">${n(r.spend, eur)}${dl(r.dSpend)}</td>
+    <td class="n">${r.roas == null ? '–' : r.roas.toFixed(2) + '×'}</td><td class="n">${n(r.newCustomers, fNum)}</td>
+    <td class="n">${n(r.users, fNum)}${dl(r.dUsers)}</td><td class="n">${n(r.reach, fNum)}${dl(r.dReach)}</td>
+    <td class="n">${r.audience == null ? '–' : fNum(r.audience)}${r.netAud ? `<span class="dl ${r.netAud > 0 ? 'up' : 'down'}">${r.netAud > 0 ? '+' : ''}${fNum(r.netAud)}</span>` : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="empty">Waiting for data…</p>';
+  state.csv.ovBrands = { name: 'overview-brands', cols: ['brand','group','sales','spend','roas','newCustomers','users','reach','audience','netAud'], rows };
+}
+
 function setStatus(t){ $('status').hidden = !t; $('status').textContent = t; }
 function showAlert(html){ $('alert').innerHTML = html; $('alert').hidden = false; }
 
@@ -2252,13 +2487,19 @@ function bindUI(){
     state.range = { from: f, to: t }; LS.set('range', state.range); load();
   };
   $('selCompare').onchange = () => { state.compare = $('selCompare').value; LS.set('compare', state.compare); load(); };
-  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; if (state.tab === 'shop') state.shopBrands = null; if (state.tab === 'paid') state.adsAccounts = null; load(); };
+  $('btnRefresh').onclick = () => { state.cache.clear(); if (state.tab === 'gsc') state.gscSites = null; if (state.tab === 'social') state.social = null; if (state.tab === 'newsletter') state.nlBrands = null; if (state.tab === 'shop') state.shopBrands = null; if (state.tab === 'paid') state.adsAccounts = null; if (state.tab === 'overview') state.ov = {}; load(); };
 
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => {
     if (state.tab === b.dataset.tab) return;
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
   $('selSocView').onchange = () => { state.socBrand = $('selSocView').value; LS.set('socBrand', state.socBrand); buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); };
+  $('selOvGroup').onchange = () => { state.ovGroup = $('selOvGroup').value; LS.set('ovGroup', state.ovGroup); state.ovBrand = 'all'; LS.set('ovBrand', 'all'); load(); };
+  $('selOvBrand').onchange = () => { state.ovBrand = $('selOvBrand').value; LS.set('ovBrand', state.ovBrand); load(); };
+  $('ovContent').addEventListener('click', (e) => {
+    const k = e.target.closest('.kpi.go'); if (k){ state.tab = k.dataset.go; LS.set('tab', state.tab); load(); window.scrollTo({ top: 0 }); return; }
+    const tr = e.target.closest('#ovTblBrands tr[data-brand]'); if (tr){ state.ovBrand = tr.dataset.brand; LS.set('ovBrand', state.ovBrand); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  });
   $('selPmPlatform').onchange = () => { state.pmPlatform = $('selPmPlatform').value; LS.set('pmPlatform', state.pmPlatform); state.adsAccount = 'all'; LS.set('pmAccount', 'all'); buildAdsSelect(); load(); };
   $('selPmAccount').onchange = () => { state.adsAccount = $('selPmAccount').value; LS.set('pmAccount', state.adsAccount); load(); };
   $('aSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.aMetric = b.dataset.m; renderAdsTrend(); };
@@ -2354,7 +2595,7 @@ async function enterDashboard(){
 }
 
 // Show any unexpected error on screen instead of failing silently.
-const DASHBOARD_VERSION = '2026-10-14.4';
+const DASHBOARD_VERSION = '2026-10-14.5';
 function showCrash(msg){
   try {
     setStatus('');

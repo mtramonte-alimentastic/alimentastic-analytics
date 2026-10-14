@@ -10,3 +10,4 @@ Newsletter tab: `KLAVIYO_ACCOUNTS` – one line per brand, `Brand name: pk_...` 
 Shop tab: `SHOPIFY_STORES` – stores separated by `;`, each `Brand: store.myshopify.com | CLIENT_ID | CLIENT_SECRET` (Dev Dashboard app with read_reports).
 Paid media tab: Google Ads from the Windsor export tab (`ADS_SHEET_TAB`, same sheet as SOCIAL_SHEET_ID or `ADS_SHEET_ID`). Without ADS_SHEET_TAB it uses the Google Ads API (needs the adwords scope and Explorer access).
 Meta Ads: Windsor export tab `META_SHEET_TAB` (same sheet), shown in Paid media with a Platform filter.
+Overview tab: headline KPIs across all sources by brand. The brand mapping is the OV_BRANDS list in index.html.
