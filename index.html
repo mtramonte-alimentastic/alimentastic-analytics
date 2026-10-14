@@ -194,6 +194,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <label class="ctl" id="ctlSocChannel" hidden><span>Channel</span><select id="selSocChannel"></select></label>
       <label class="ctl" id="ctlNlBrand" hidden><span>Brand</span><select id="selNlBrand"></select></label>
       <label class="ctl" id="ctlShopBrand" hidden><span>Store</span><select id="selShopBrand"></select></label>
+      <label class="ctl" id="ctlPmPlatform" hidden><span>Platform</span><select id="selPmPlatform"></select></label>
       <label class="ctl" id="ctlPmAccount" hidden><span>Ad account</span><select id="selPmAccount"></select></label>
       <div class="ctl"><span>Date range</span>
         <div class="seg" id="segRange">
@@ -324,7 +325,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <section class="panel" id="aPanelAccounts">
         <div class="ph">
           <h2 class="bar">Ad accounts</h2>
-          <span class="sub">Google Ads · select a row to open that account</span>
+          <span class="sub">Select a row to open that account</span>
           <div class="tools"><button class="mini" data-csv="aAccounts">Download CSV</button></div>
         </div>
         <div class="tw" id="aTblAccounts"></div>
@@ -341,7 +342,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 
       <div class="grid2">
         <section class="panel">
-          <div class="ph"><h2 class="bar">Devices</h2><span class="sub">Spend</span></div>
+          <div class="ph"><h2 class="bar">Devices &amp; placements</h2><span class="sub" id="aDevSub">Spend</span></div>
           <div id="aLstDevices"></div>
         </section>
         <section class="panel">
@@ -664,6 +665,8 @@ const state = {
   shMetric: 'sales',
   adsAccounts: null,
   adsAccount: LS.get('pmAccount', 'all'),
+  pmPlatform: LS.get('pmPlatform', 'all'),
+  pmMulti: false,
   aMetric: 'spend',
   sMetric: 'reach',
   metric: 'activeUsers',
@@ -797,7 +800,7 @@ function syncTabUI(){
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop; $('ctlPmAccount').hidden = !adsT;
+  $('ctlView').hidden = !ga; $('ctlSites').hidden = !ga; $('ctlGscView').hidden = !gsc; $('ctlSocView').hidden = !soc; $('ctlSocChannel').hidden = !soc; $('ctlNlBrand').hidden = !nl; $('ctlShopBrand').hidden = !shop; $('ctlPmAccount').hidden = !adsT; $('ctlPmPlatform').hidden = !adsT || !state.pmMulti;
   if (!ga) $('content').hidden = true;
   if (!gsc) $('gscContent').hidden = true;
   if (!soc) $('socContent').hidden = true;
@@ -1800,11 +1803,21 @@ async function adsFetch(acc, start, end){
   return v;
 }
 
+const PM_LABEL = { google: 'Google Ads', meta: 'Meta Ads' };
+const pmPlat = (a) => a.platform || 'google';
 function buildAdsSelect(){
-  const a = state.adsAccounts || [];
+  const all = state.adsAccounts || [];
+  const plats = [...new Set(all.map(pmPlat))];
+  state.pmMulti = plats.length > 1;
+  if (state.pmPlatform !== 'all' && !plats.includes(state.pmPlatform)) state.pmPlatform = 'all';
+  $('selPmPlatform').innerHTML = '<option value="all">All platforms</option>' + plats.map(p => `<option value="${p}">${PM_LABEL[p] || p}</option>`).join('');
+  $('selPmPlatform').value = state.pmPlatform;
+  $('ctlPmPlatform').hidden = !state.pmMulti;
+  const a = all.filter(x => state.pmPlatform === 'all' || pmPlat(x) === state.pmPlatform);
   if (state.adsAccount !== 'all' && !a.some(x => x.id === state.adsAccount)) state.adsAccount = 'all';
   if (a.length === 1) state.adsAccount = a[0].id;
-  $('selPmAccount').innerHTML = (a.length > 1 ? '<option value="all">All accounts</option>' : '') + a.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+  const label = (x) => state.pmMulti && state.pmPlatform === 'all' ? `${x.name} (${pmPlat(x) === 'meta' ? 'Meta' : 'Google'})` : x.name;
+  $('selPmAccount').innerHTML = (a.length > 1 ? '<option value="all">All accounts</option>' : '') + a.map(x => `<option value="${esc(x.id)}">${esc(label(x))}</option>`).join('');
   $('selPmAccount').value = state.adsAccount;
 }
 
@@ -1829,7 +1842,8 @@ async function loadAds(){
         : 'No Google Ads accounts found for the saved Google sign-in. Check that the account you used in the OAuth Playground has access to your Google Ads accounts.');
       return;
     }
-    const targets = state.adsAccount === 'all' ? state.adsAccounts : state.adsAccounts.filter(a => a.id === state.adsAccount);
+    const inPlat = state.adsAccounts.filter(a => state.pmPlatform === 'all' || pmPlat(a) === state.pmPlatform);
+    const targets = state.adsAccount === 'all' ? inPlat : inPlat.filter(a => a.id === state.adsAccount);
     setStatus(targets.length > 1 ? `Loading ${targets.length} ad accounts…` : `Loading ${targets[0].name}…`);
     const cur = [iso(R.cur.start), iso(R.cur.end)], prev = R.prev ? [iso(R.prev.start), iso(R.prev.end)] : null;
     const results = await pool(targets, 3, async a => ({ acc: a, cur: await adsFetch(a, cur[0], cur[1]), prev: prev ? await adsFetch(a, prev[0], prev[1]) : null }),
@@ -1839,10 +1853,10 @@ async function loadAds(){
     if (authFail) throw authFail.e;
     const ok = results.filter(r => r.ok).map(r => r.v);
     const failed = results.map((r, i) => r.ok ? null : { name: targets[i].name, msg: r.e.message }).filter(Boolean);
-    if (!ok.length){ $('pmContent').hidden = true; showAlert(`Could not load Google Ads data:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`); return; }
+    if (!ok.length){ $('pmContent').hidden = true; showAlert(`Could not load ad data:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`); return; }
     $('pmContent').hidden = false;
     renderAds(ok, R);
-    if (failed.length) showAlert(`Some Google Ads data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
+    if (failed.length) showAlert(`Some ad data could not be loaded:<ul>${failed.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.msg)}</li>`).join('')}</ul>`);
   } catch(e){
     if (e instanceof AuthError){ handleAuthLost(e); return; }
     $('pmContent').hidden = true;
@@ -1872,7 +1886,10 @@ function renderAds(results, R){
     { label: 'ROAS', v: fRoas(c.roas), d: dd(c.roas, p && p.roas) }
   ];
   $('aKpis').innerHTML = kpis.map(k => `<div class="kpi"><div class="lbl">${esc(k.label)}</div><div class="val">${k.v}</div>${k.d ? `<div class="d ${k.d.cls}">${k.d.txt}</div>` : ''}${k.sub ? `<div class="lbl" style="margin:6px 0 0">${esc(k.sub)}</div>` : ''}</div>`).join('');
-  $('aNote').textContent = (state.adsSource === 'windsor' ? 'Google Ads data from Windsor\'s daily export, up to yesterday. ' : 'Figures come straight from Google Ads. ') + 'Conversions and conversion value follow the conversion actions set up in each account, so they can differ from Shopify or GA4. ROAS is conversion value divided by spend. For cost per click and cost per conversion, down is good.';
+  const platsIn = [...new Set(results.map(r => pmPlat(r.acc)))];
+  const metaNote = platsIn.includes('meta') ? 'For Meta, clicks are link clicks, and conversions are website purchases tracked by your Meta Pixel. ' : '';
+  $('aDevSub').textContent = platsIn.length > 1 ? 'Spend · Google: device, Meta: Facebook/Instagram placement' : platsIn[0] === 'meta' ? 'Spend by placement' : 'Spend by device';
+  $('aNote').textContent = (state.adsSource === 'windsor' ? 'Data from Windsor\'s daily export, up to yesterday. ' : 'Figures come straight from Google Ads. ') + metaNote + 'Conversions and conversion value follow the conversion actions set up in each account, so they can differ from Shopify or GA4. ROAS is conversion value divided by spend. For cost per click and cost per conversion, down is good.';
 
   state.lastAds = { results, R, cur };
   renderAdsTrend();
@@ -1881,22 +1898,23 @@ function renderAds(results, R){
   $('aPanelAccounts').hidden = single;
   if (!single){
     const rows = results.map(r => { const t = adsDerive(adsTotal(r.cur)), pt = r.prev ? adsDerive(adsTotal(r.prev)) : null;
-      return { name: r.acc.name, id: r.acc.id, currency: r.acc.currency, ...t, dSpend: pt ? delta(t.spend, pt.spend) : null, dConv: pt ? delta(t.conversions, pt.conversions) : null }; })
+      return { name: r.acc.name, id: r.acc.id, platform: PM_LABEL[pmPlat(r.acc)] || '', currency: r.acc.currency, ...t, dSpend: pt ? delta(t.spend, pt.spend) : null, dConv: pt ? delta(t.conversions, pt.conversions) : null }; })
       .sort((a, b) => b.spend - a.spend);
     const total = rows.reduce((s, r) => s + r.spend, 0) || 1;
     const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
-    $('aTblAccounts').innerHTML = `<table><thead><tr><th>Account</th><th class="n">Spend</th><th>Share</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Conversions</th><th class="n">Cost/conv.</th><th class="n">ROAS</th></tr></thead><tbody>${rows.map(r => `
-      <tr class="click" data-id="${esc(r.id)}" tabindex="0"><td><b>${esc(r.name)}</b></td>
+    const showPlat = new Set(rows.map(r => r.platform)).size > 1;
+    $('aTblAccounts').innerHTML = `<table><thead><tr><th>Account</th>${showPlat ? '<th>Platform</th>' : ''}<th class="n">Spend</th><th>Share</th><th class="n">Clicks</th><th class="n">CTR</th><th class="n">Conversions</th><th class="n">Cost/conv.</th><th class="n">ROAS</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="click" data-id="${esc(r.id)}" tabindex="0"><td><b>${esc(r.name)}</b></td>${showPlat ? `<td>${esc(r.platform)}</td>` : ''}
       <td class="n">${money(r.spend, r.currency)}${dl(r.dSpend)}</td>
       <td><div class="share"><i style="width:${(r.spend/total*100).toFixed(1)}%"></i><span>${(r.spend/total*100).toFixed(1)}%</span></div></td>
       <td class="n">${fNum(r.clicks)}</td><td class="n">${r.ctr == null ? '–' : fPct(r.ctr)}</td>
       <td class="n">${r.conversions.toLocaleString('en-GB', { maximumFractionDigits: 1 })}${dl(r.dConv)}</td>
       <td class="n">${r.cpa == null ? '–' : money(r.cpa, r.currency)}</td><td class="n">${fRoas(r.roas)}</td></tr>`).join('')}</tbody></table>`;
-    state.csv.aAccounts = { name: 'ads-accounts', cols: ['name','id','spend','impressions','clicks','ctr','cpc','conversions','cpa','value','roas'], rows };
+    state.csv.aAccounts = { name: 'paid-accounts', cols: ['name','platform','id','spend','impressions','clicks','ctr','cpc','conversions','cpa','value','roas'], rows };
   }
 
-  const camps = results.flatMap(r => (r.cur.campaigns || []).map(x => ({ ...adsDerive(x), account: r.acc.name, currency: r.acc.currency }))).sort((a, b) => b.spend - a.spend);
-  const cols = [{ k: 'name', label: 'Campaign' }].concat(single ? [] : [{ k: 'account', label: 'Account' }]).concat([
+  const camps = results.flatMap(r => (r.cur.campaigns || []).map(x => ({ ...adsDerive(x), account: r.acc.name, platform: PM_LABEL[pmPlat(r.acc)] || '', currency: r.acc.currency }))).sort((a, b) => b.spend - a.spend);
+  const cols = [{ k: 'name', label: 'Campaign' }].concat(single ? [] : [{ k: 'account', label: 'Account' }]).concat(platsIn.length > 1 ? [{ k: 'platform', label: 'Platform' }] : []).concat([
     { k: 'type', label: 'Type' }, { k: 'status', label: 'Status' },
     { k: 'spend', label: 'Spend', n: 1, f: (v) => money(v, cur) }, { k: 'clicks', label: 'Clicks', n: 1, f: fNum },
     { k: 'ctr', label: 'CTR', n: 1, f: (v) => v == null ? '–' : fPct(v) }, { k: 'conversions', label: 'Conv.', n: 1, f: (v) => (v || 0).toLocaleString('en-GB', { maximumFractionDigits: 1 }) },
@@ -1910,7 +1928,7 @@ function renderAds(results, R){
   };
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   moneyBars('aLstDevices', sumByKey(results.map(r => (r.cur.devices || []).map(d => ({ ...d, device: cap(d.device) }))), 'device', ['spend']).filter(x => x.spend > 0).sort((a, b) => b.spend - a.spend), 'device');
-  moneyBars('aLstTypes', sumByKey(results.map(r => (r.cur.campaigns || []).map(x => ({ type: cap(x.type || 'other'), spend: x.spend }))), 'type', ['spend']).filter(x => x.spend > 0).sort((a, b) => b.spend - a.spend), 'type');
+  moneyBars('aLstTypes', sumByKey(results.map(r => (r.cur.campaigns || []).map(x => ({ type: (pmPlat(r.acc) === 'meta' ? 'Meta · ' : (platsIn.length > 1 ? 'Google · ' : '')) + cap((x.type || 'other').replace(/^outcome /, '')), spend: x.spend }))), 'type', ['spend']).filter(x => x.spend > 0).sort((a, b) => b.spend - a.spend), 'type');
 }
 
 function renderAdsTrend(){
@@ -2241,6 +2259,7 @@ function bindUI(){
     state.tab = b.dataset.tab; LS.set('tab', state.tab); load();
   });
   $('selSocView').onchange = () => { state.socBrand = $('selSocView').value; LS.set('socBrand', state.socBrand); buildChannelSelect(); LS.set('socChannel', state.socChannel); load(); };
+  $('selPmPlatform').onchange = () => { state.pmPlatform = $('selPmPlatform').value; LS.set('pmPlatform', state.pmPlatform); state.adsAccount = 'all'; LS.set('pmAccount', 'all'); buildAdsSelect(); load(); };
   $('selPmAccount').onchange = () => { state.adsAccount = $('selPmAccount').value; LS.set('pmAccount', state.adsAccount); load(); };
   $('aSegMetric').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; state.aMetric = b.dataset.m; renderAdsTrend(); };
   $('aTblAccounts').onclick = (e) => {
@@ -2335,7 +2354,7 @@ async function enterDashboard(){
 }
 
 // Show any unexpected error on screen instead of failing silently.
-const DASHBOARD_VERSION = '2026-10-14.3';
+const DASHBOARD_VERSION = '2026-10-14.4';
 function showCrash(msg){
   try {
     setStatus('');

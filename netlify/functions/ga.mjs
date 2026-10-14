@@ -644,24 +644,38 @@ const ACOLS = {
   device: ['device'], spend: ['spend', 'cost'], impressions: ['impressions'], clicks: ['clicks'], conversions: ['conversions'],
   value: ['conversion_value', 'conversion value', 'conversions_value', 'conversions value']
 };
-const adsSheetCache = { at: 0, rows: null };
-async function adsSheetRows() {
+const MCOLS = {
+  date: ['date'], account_id: ['account_id', 'account id'], account: ['account_name', 'account name'],
+  currency: ['account_currency', 'account currency'], campaign_id: ['campaign_id', 'campaign id'], campaign: ['campaign'],
+  status: ['campaign_status', 'campaign status'], type: ['campaign_objective', 'campaign objective', 'objective'],
+  device: ['publisher_platform', 'ad platform', 'device_platform', 'device platform'], spend: ['spend', 'amount spent'],
+  impressions: ['impressions'], clicks: ['link_clicks', 'link clicks', 'clicks'],
+  conversions: ['actions_offsite_conversion_fb_pixel_purchase', 'website purchases', 'actions_purchase', 'action purchase'],
+  value: ['action_values_offsite_conversion_fb_pixel_purchase', 'website purchases conversion value', 'action_values_purchase', 'action values purchase']
+};
+const sheetCaches = {};
+async function adsSheetRows(platform = 'google') {
+  const tabVar = platform === 'meta' ? 'META_SHEET_TAB' : 'ADS_SHEET_TAB';
+  const COLS = platform === 'meta' ? MCOLS : ACOLS;
+  const adsSheetCache = (sheetCaches[platform] ||= { at: 0, rows: null });
   if (adsSheetCache.rows && Date.now() - adsSheetCache.at < 10 * 60 * 1000) return adsSheetCache.rows;
   let id = (process.env.ADS_SHEET_ID || process.env.SOCIAL_SHEET_ID || '').trim();
   const mm = id.match(/\/d\/([a-zA-Z0-9_-]+)/); if (mm) id = mm[1];
   if (!id) throw fail('The Google Ads sheet is not connected. Add SOCIAL_SHEET_ID (or ADS_SHEET_ID) in Netlify.');
-  const tab = (process.env.ADS_SHEET_TAB || '').trim();
+  const tab = (process.env[tabVar] || '').trim();
   let j;
   try { j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(`'${tab.replace(/'/g, "''")}'!A1:Z`)}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`); }
-  catch (e) { if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check ADS_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400); throw e; }
+  catch (e) { if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check ${tabVar} in Netlify (it must match the tab name exactly).`, 400); throw e; }
   const values = j.values || [];
   const head = (values[0] || []).map(norm), idx = {};
-  for (const [k, names] of Object.entries(ACOLS)) idx[k] = head.findIndex(h => names.includes(h));
+  // Pick the first listed alias that exists, so preferred columns (e.g. link clicks) win over fallbacks.
+  for (const [k, names] of Object.entries(COLS)) { idx[k] = -1; for (const n of names) { const i = head.indexOf(n); if (i >= 0) { idx[k] = i; break; } } }
   const get = (row, k) => idx[k] >= 0 ? row[idx[k]] : null;
   const rows = [];
   for (const row of values.slice(1)) {
     const date = toIsoDate(get(row, 'date')); if (!date) continue;
-    const aid = String(get(row, 'account_id') ?? '').replace(/\D/g, '');
+    const aidRaw = String(get(row, 'account_id') ?? '').replace(/\D/g, '');
+    const aid = aidRaw ? (platform === 'meta' ? 'meta_' + aidRaw : aidRaw) : '';
     const name = String(get(row, 'account') ?? '').trim();
     if (!aid && !name) continue;
     rows.push({ date, aid: aid || name, account: name || aid, currency: String(get(row, 'currency') ?? '').trim() || 'EUR',
@@ -676,11 +690,15 @@ async function adsSheetRows() {
 }
 async function adsSheetAccounts() {
   const m = new Map();
-  (await adsSheetRows()).forEach(r => { if (!m.has(r.aid)) m.set(r.aid, { id: r.aid, name: r.account, currency: r.currency, login: null }); });
-  return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  for (const platform of ['google', 'meta']) {
+    if (!(process.env[platform === 'meta' ? 'META_SHEET_TAB' : 'ADS_SHEET_TAB'] || '').trim()) continue;
+    (await adsSheetRows(platform)).forEach(r => { if (!m.has(r.aid)) m.set(r.aid, { id: r.aid, name: r.account, currency: r.currency, login: null, platform }); });
+  }
+  return [...m.values()].sort((a, b) => a.platform.localeCompare(b.platform) || a.name.localeCompare(b.name));
 }
 async function adsSheetData(id, start, end) {
-  const rows = (await adsSheetRows()).filter(r => r.aid === id && r.date >= start && r.date <= end);
+  const platform = id.startsWith('meta_') ? 'meta' : 'google';
+  const rows = (await adsSheetRows(platform)).filter(r => r.aid === id && r.date >= start && r.date <= end);
   const add = (o, r) => { o.spend += r.spend; o.impressions += r.impressions; o.clicks += r.clicks; o.conversions += r.conversions; o.value += r.value; return o; };
   const z = () => ({ spend: 0, impressions: 0, clicks: 0, conversions: 0, value: 0 });
   const daily = {}, camps = new Map(), devices = new Map();
@@ -748,14 +766,16 @@ export default async (req) => {
       return json(200, out);
     }
     if (action === 'pm_accounts' || action === 'ads_accounts') {
-      return cdnJson({ source: process.env.ADS_SHEET_TAB ? 'windsor' : 'api', accounts: process.env.ADS_SHEET_TAB ? await adsSheetAccounts() : await adsAccounts() });
+      const sheetMode = !!(process.env.ADS_SHEET_TAB || process.env.META_SHEET_TAB);
+      return cdnJson({ source: sheetMode ? 'windsor' : 'api', accounts: sheetMode ? await adsSheetAccounts() : (await adsAccounts()).map(a => ({ ...a, platform: 'google' })) });
     }
     if (action === 'pm_data' || action === 'ads_data') {
-      const id = (url.searchParams.get('id') || '').replace(/-/g, ''), login = (url.searchParams.get('login') || '').replace(/-/g, '');
+      const id = (url.searchParams.get('id') || '').replace(/-/g, '').replace(/^meta(\d)/, 'meta_$1'), login = (url.searchParams.get('login') || '').replace(/-/g, '');
       const start = isoDay(url.searchParams.get('start')), end = isoDay(url.searchParams.get('end'));
-      if (!/^\d+$/.test(id) || (login && !/^\d+$/.test(login))) return json(400, { error: 'Invalid Google Ads account.' });
+      if (!/^(meta_)?\d+$/.test(id) || (login && !/^\d+$/.test(login))) return json(400, { error: 'Invalid ad account.' });
       if (!start || !end || start > end) return json(400, { error: 'Invalid date range.' });
-      return cdnJson(process.env.ADS_SHEET_TAB ? await adsSheetData(id, start, end) : await adsData(id, login || null, start, end));
+      const sheetMode = !!(process.env.ADS_SHEET_TAB || process.env.META_SHEET_TAB);
+      return cdnJson(sheetMode || id.startsWith('meta_') ? await adsSheetData(id, start, end) : await adsData(id, login || null, start, end));
     }
     if (action === 'shopify_stores') {
       return json(200, { brands: shopifyStores().map(s => s.brand) });
