@@ -109,6 +109,10 @@ main{padding:24px clamp(16px,4vw,48px) 64px;max-width:1500px;margin:0 auto}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;font-weight:700;font-size:12.5px;color:var(--muted);padding:8px 10px;border-bottom:1.5px solid var(--black);white-space:nowrap}
 th.sortable{cursor:pointer}
+main table thead th:not([data-sort]){cursor:pointer;user-select:none}
+main table thead th:not([data-sort]):hover{color:var(--black)}
+th.ssorted{color:var(--black)}
+th .sarrow{margin-left:4px}
 th.sortable:hover{color:var(--black)}
 th.sorted{color:var(--black)}
 td{padding:9px 10px;border-bottom:1px solid var(--rule);vertical-align:middle}
@@ -123,6 +127,34 @@ td .dl{font-size:12.5px;font-weight:700;margin-left:6px}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .post a:hover{text-decoration:underline}
 .post small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+/* ---------- Assistant ---------- */
+.ask-btn{position:fixed;right:22px;bottom:22px;z-index:40;background:var(--black);color:var(--white);border:0;padding:13px 18px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.18);display:flex;gap:8px;align-items:center}
+.ask-btn i{display:inline-block;width:9px;height:9px;background:var(--red)}
+.ask-btn:hover{background:#222}
+.ask{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--white);z-index:50;box-shadow:-10px 0 30px rgba(0,0,0,.15);display:flex;flex-direction:column;border-left:3px solid var(--black)}
+.ask-h{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--rule)}
+.ask-h h3{font-weight:900;text-transform:uppercase;font-size:17px;flex:1}
+.ask-h button{background:none;border:0;font-size:18px;cursor:pointer;padding:4px 6px;color:var(--muted)}
+.ask-h button:hover{color:var(--black)}
+.ask-b{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.ask-m{max-width:100%;font-size:14.5px;line-height:1.5}
+.ask-m.user{align-self:flex-end;background:var(--black);color:var(--white);padding:9px 12px;max-width:85%}
+.ask-m.bot p{margin:0 0 8px}
+.ask-m.bot ul,.ask-m.bot ol{margin:0 0 8px 20px}
+.ask-m.bot table{font-size:13px;margin:6px 0 10px}
+.ask-m.bot td,.ask-m.bot th{padding:5px 6px}
+.ask-m.bot h4{font-size:14px;font-weight:900;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+.ask-step{font-size:12.5px;color:var(--muted)}
+.ask-step::before{content:"";display:inline-block;width:7px;height:7px;background:var(--red);margin-right:8px}
+.ask-step.run::before{animation:pulse 1s ease-in-out infinite alternate}
+.ask-err{border-left:3px solid var(--red);background:var(--tint);padding:8px 10px;font-size:13.5px}
+.ask-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ask-chips button{background:var(--white);border:1px solid var(--rule);padding:7px 10px;font-size:13px;cursor:pointer;text-align:left}
+.ask-chips button:hover{border-color:var(--black)}
+.ask-f{border-top:1px solid var(--rule);padding:12px 14px;display:flex;gap:8px}
+.ask-f textarea{flex:1;resize:none;border:1.5px solid var(--black);padding:9px 10px;font:inherit;font-size:14.5px;height:64px}
+.ask-f button{align-self:stretch}
+.ask-note{font-size:11.5px;color:var(--muted);padding:0 14px 10px}
 .ovh{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;margin:26px 0 0;color:var(--black)}
 .ovh + .kpis{margin-top:8px}
 .kpi.go{cursor:pointer}
@@ -138,6 +170,10 @@ td .dl{font-size:12.5px;font-weight:700;margin-left:6px}
 
 /* ---------- Bars list ---------- */
 .bars{display:grid;gap:10px}
+.bh{display:grid;grid-template-columns:minmax(110px,170px) 1fr auto;gap:12px;margin-bottom:6px;border-bottom:1.5px solid var(--black);padding-bottom:5px}
+.bh button{background:none;border:0;padding:0;font-weight:700;font-size:12.5px;color:var(--muted);cursor:pointer;text-align:left}
+.bh button:last-child{text-align:right;min-width:90px}
+.bh button:hover,.bh button.on{color:var(--black)}
 .br{display:grid;grid-template-columns:minmax(110px,170px) 1fr auto;gap:12px;align-items:center;font-size:14px}
 .br .t{height:14px;background:var(--surface)}
 .br .t i{display:block;height:100%;background:var(--black)}
@@ -595,6 +631,14 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </div>
   </section>
 </main>
+
+<button class="ask-btn" id="askOpen" hidden aria-label="Ask the dashboard"><i></i>Ask the dashboard</button>
+<aside class="ask" id="askPanel" hidden aria-label="Insights assistant">
+  <div class="ask-h"><h3>Ask the dashboard</h3><button id="askNew" title="New conversation">↺</button><button id="askClose" title="Close">✕</button></div>
+  <div class="ask-b" id="askLog"></div>
+  <div class="ask-f"><textarea id="askInput" placeholder="Ask about performance, trends or what to do next…"></textarea><button class="btn red" id="askSend">Ask</button></div>
+  <p class="ask-note">Answers are based on the dashboard's data sources and can contain mistakes. Check important numbers in the tabs.</p>
+</aside>
 
 <dialog id="dlgSites" aria-labelledby="dlgTitle">
   <div class="dlg-h">
@@ -2044,20 +2088,13 @@ function ovMap(src, key){
 const OV_SOURCES = ['Shop', 'Paid media', 'Web analytics', 'Search Console', 'Social', 'Newsletter'];
 async function ovOnce(key, fn){ if (state.ov[key] === undefined) state.ov[key] = await fn(); return state.ov[key]; }
 
-async function loadOverview(){
-  const seq = ++loadSeq;
-  const R = getRanges(1), Rg = getRanges(3);
-  renderPeriod(R);
-  $('alert').hidden = true;
-  $('ovContent').hidden = false;
+// Collects the overview data for a period from all sources. Used by the Overview tab and the assistant.
+async function ovCollect(R, Rg, onSourceDone){
   const data = {}, issues = [], done = new Set();
   const B = (b) => data[b] ||= { cur: {}, prev: {} };
   const add = (b, part, k, v) => { if (v == null || isNaN(v)) return; const o = B(b)[part]; o[k] = (o[k] || 0) + v; };
   const cur = [iso(R.cur.start), iso(R.cur.end)], prev = R.prev ? [iso(R.prev.start), iso(R.prev.end)] : null;
   const both = (fn) => [['cur', cur], ...(prev ? [['prev', prev]] : [])].map(([part, w]) => fn(part, w));
-  const draw = () => { if (seq === loadSeq) renderOverview(data, R, done, issues); };
-  draw();
-
   const tasks = {
     'Shop': async () => {
       const brands = await ovOnce('shopBrands', async () => (await api('shopify_stores')).brands || []);
@@ -2105,16 +2142,38 @@ async function loadOverview(){
       r.forEach((x, i) => { if (!x.ok) issues.push(`Newsletter (${brands[i]}): ${x.e.message}`); });
     }
   };
-  setStatus(`Loading ${OV_SOURCES.length} sources…`);
+  let authErr = null;
   await Promise.all(OV_SOURCES.map(async name => {
     try { await tasks[name](); }
-    catch(e){ if (e instanceof AuthError){ handleAuthLost(e); return; } issues.push(`${name}: ${e.message}`); }
+    catch(e){ if (e instanceof AuthError) authErr = e; else issues.push(`${name}: ${e.message}`); }
     done.add(name);
-    if (seq === loadSeq){ setStatus(done.size < OV_SOURCES.length ? `Loading sources… ${done.size} of ${OV_SOURCES.length}` : ''); draw(); }
+    if (onSourceDone) onSourceDone(data, done, issues);
   }));
-  if (seq !== loadSeq) return;
-  setStatus('');
-  if (issues.length) showAlert(`Some sources could not be loaded, so their tiles are incomplete:<ul>${issues.slice(0, 8).map(i => `<li>${esc(i)}</li>`).join('')}</ul>`);
+  if (authErr) throw authErr;
+  return { data, issues, done };
+}
+
+async function loadOverview(){
+  const seq = ++loadSeq;
+  const R = getRanges(1), Rg = getRanges(3);
+  renderPeriod(R);
+  $('alert').hidden = true;
+  $('ovContent').hidden = false;
+  renderOverview({}, R, new Set(), []);
+  setStatus(`Loading ${OV_SOURCES.length} sources…`);
+  try {
+    const { issues } = await ovCollect(R, Rg, (data, done, issues) => {
+      if (seq !== loadSeq) return;
+      setStatus(done.size < OV_SOURCES.length ? `Loading sources… ${done.size} of ${OV_SOURCES.length}` : '');
+      renderOverview(data, R, done, issues);
+    });
+    if (seq !== loadSeq) return;
+    setStatus('');
+    if (issues.length) showAlert(`Some sources could not be loaded, so their tiles are incomplete:<ul>${issues.slice(0, 8).map(i => `<li>${esc(i)}</li>`).join('')}</ul>`);
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); return; }
+    setStatus(''); showAlert(esc(e.message));
+  }
 }
 
 function ovBrandsInView(data){
@@ -2331,14 +2390,31 @@ function renderTrend(){
   });
 }
 
+const BAR_LABEL = { sessions: 'Sessions', activeUsers: 'Users', clicks: 'Clicks', spend: 'Spend', sales: 'Sales', impressions: 'Impressions', profiles: 'Profiles', followers: 'Followers', keyEvents: 'Key events' };
+const barSorts = {};   // remembered per bar list, like table sorting
+function sortBars(box, key, dir){
+  const list = box.querySelector('.bars'); if (!list) return;
+  const items = [...list.querySelectorAll('.br')];
+  items.sort((a, b) => key === 'name' ? dir * a.dataset.n.localeCompare(b.dataset.n) : dir * (Number(a.dataset.v) - Number(b.dataset.v)));
+  items.forEach(x => list.appendChild(x));
+  box.querySelectorAll('.bh button').forEach(bt => { bt.classList.toggle('on', bt.dataset.k === key); bt.querySelector('.sarrow')?.remove(); if (bt.dataset.k === key) bt.insertAdjacentHTML('beforeend', `<span class="sarrow">${dir > 0 ? '↑' : '↓'}</span>`); });
+}
+document.addEventListener('click', (e) => {
+  const bt = e.target.closest('.bh button'); if (!bt) return;
+  const box = bt.closest('[id]'); const k = bt.dataset.k, prev = barSorts[box.id];
+  const dir = prev && prev.key === k ? -prev.dir : (k === 'name' ? 1 : -1);
+  barSorts[box.id] = { key: k, dir };
+  sortBars(box, k, dir);
+});
 function renderBars(id, rows, dim, metric){
   if (!rows.length){ $(id).innerHTML = '<p class="empty">No data for this period.</p>'; return; }
   const total = rows.reduce((s, r) => s + r[metric], 0) || 1;
   const max = Math.max(...rows.map(r => r[metric])) || 1;
-  $(id).innerHTML = `<div class="bars">${rows.map(r => `
-    <div class="br"><span class="nm" title="${esc(r[dim])}">${esc(r[dim])}</span>
+  $(id).innerHTML = `<div class="bh"><button data-k="name">Name</button><span></span><button data-k="value">${BAR_LABEL[metric] || 'Value'}</button></div><div class="bars">${rows.map(r => `
+    <div class="br" data-n="${esc(String(r[dim]).toLowerCase())}" data-v="${Number(r[metric]) || 0}"><span class="nm" title="${esc(r[dim])}">${esc(r[dim])}</span>
       <span class="t"><i style="width:${(r[metric]/max*100).toFixed(1)}%"></i></span>
       <span class="v">${fNum(r[metric])}<small>${(r[metric]/total*100).toFixed(1)}%</small></span></div>`).join('')}</div>`;
+  const s = barSorts[id]; if (s) sortBars($(id), s.key, s.dir);
 }
 
 function renderSites(results, R){
@@ -2594,8 +2670,350 @@ async function enterDashboard(){
   if (firstRun && state.properties.length > 1) openSites();
 }
 
+/* ---------- Sortable tables: click any column header to sort ---------- */
+const tableSorts = {};   // remembered per table container, so sorting survives a reload of the data
+function cellValue(td){
+  if (!td) return { n: null, s: '' };
+  const c = td.cloneNode(true);
+  c.querySelectorAll('.dl, small, .share span').forEach(x => x.remove());
+  const s = c.textContent.replace(/\s+/g, ' ').replace('↗', '').trim();
+  if (!s || s === '–' || s === '-' || s === '…') return { n: null, s: '' };
+  const dur = s.match(/^(?:(\d+)m\s*)?(\d+)s$/);
+  if (dur) return { n: (+dur[1] || 0) * 60 + (+dur[2]), s };
+  if (/^\d{1,2} [A-Za-z]{3,5} \d{4}$/.test(s)) { const d = Date.parse(s.replace('Sept', 'Sep')); if (!isNaN(d)) return { n: d, s }; }
+  const numText = s.replace(/[€$£×%\s]/g, '').replace(/,/g, '').replace(/^[▲▼±]/, '');
+  if (/^-?\d+(\.\d+)?$/.test(numText)) return { n: parseFloat(numText), s };
+  return { n: null, s: s.toLowerCase(), text: true };
+}
+function applySort(table, idx, dir){
+  const tbody = table.tBodies[0]; if (!tbody) return;
+  const ths = [...table.tHead.rows[0].cells];
+  ths.forEach((h, i) => { h.classList.toggle('ssorted', i === idx); const a = h.querySelector('.sarrow'); if (a) a.remove(); });
+  if (ths[idx]) ths[idx].insertAdjacentHTML('beforeend', `<span class="sarrow">${dir > 0 ? '↑' : '↓'}</span>`);
+  const rows = [...tbody.rows].map(r => ({ r, v: cellValue(r.cells[idx]) }));
+  rows.sort((a, b) => {
+    if (a.v.n == null && !a.v.s) return 1;          // empty values always last
+    if (b.v.n == null && !b.v.s) return -1;
+    if (a.v.n != null && b.v.n != null) return dir * (a.v.n - b.v.n);
+    return dir * a.v.s.localeCompare(b.v.s);
+  });
+  table.dataset.sorting = '1';
+  rows.forEach(x => tbody.appendChild(x.r));
+  delete table.dataset.sorting;
+}
+document.addEventListener('click', (e) => {
+  const th = e.target.closest('main table thead th');
+  if (!th || th.dataset.sort) return;               // tables with their own sorting keep it
+  const table = th.closest('table'), idx = [...th.parentNode.children].indexOf(th);
+  const key = table.parentElement && table.parentElement.id;
+  const prev = key && tableSorts[key];
+  let dir;
+  if (prev && prev.idx === idx) dir = -prev.dir;
+  else { const sample = [...table.tBodies[0].rows].map(r => cellValue(r.cells[idx])).find(v => v.n != null || v.s); dir = sample && sample.n != null ? -1 : 1; }
+  if (key) tableSorts[key] = { idx, dir };
+  applySort(table, idx, dir);
+});
+// Re-apply a remembered sort whenever a table is redrawn (new date range, brand, refresh …)
+new MutationObserver((muts) => {
+  muts.forEach(m => m.addedNodes.forEach(n => {
+    if (n.nodeType !== 1) return;
+    const tables = n.tagName === 'TABLE' ? [n] : [...n.querySelectorAll ? n.querySelectorAll('table') : []];
+    tables.forEach(tb => { const key = tb.parentElement && tb.parentElement.id; const s = key && tableSorts[key];
+      if (s && !tb.dataset.sorting && tb.tHead && tb.tHead.rows[0].cells[s.idx] && !tb.tHead.rows[0].cells[s.idx].dataset.sort) applySort(tb, s.idx, s.dir); });
+  }));
+}).observe(document.querySelector('main'), { childList: true, subtree: true });
+
+/* =====================================================================
+   INSIGHTS ASSISTANT — Claude with data tools. The conversation loop runs here;
+   the Netlify function makes one Claude call per round and holds the API key.
+   ===================================================================== */
+const chat = { messages: [], busy: false };
+const r2 = (v) => v == null || isNaN(v) ? null : Math.round(v * 100) / 100;
+const pctOf = (a, b) => a != null && b ? r2((a - b) / b * 100) : null;
+function toolRange(inp, lag = 1){
+  const ok = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+  const yesterday = addDays(today(), -lag);
+  let start = ok(inp.start) ? parseISO(inp.start) : addDays(yesterday, -27), end = ok(inp.end) ? parseISO(inp.end) : yesterday;
+  if (end > yesterday) end = yesterday;
+  if (start > end) start = end;
+  if (daysBetween(start, end) > 400) start = addDays(end, -399);
+  const days = daysBetween(start, end);
+  let prev;
+  if (ok(inp.compare_start) && ok(inp.compare_end)) prev = { start: parseISO(inp.compare_start), end: parseISO(inp.compare_end) };
+  else prev = { start: addDays(start, -days), end: addDays(start, -1) };
+  return { cur: { start, end }, prev, days };
+}
+const per = (R) => ({ current: `${iso(R.cur.start)} to ${iso(R.cur.end)}`, comparison: R.prev ? `${iso(R.prev.start)} to ${iso(R.prev.end)}` : null });
+const nameMatch = (name, q) => !q || String(name || '').toLowerCase().includes(String(q).toLowerCase());
+const brandMatch = (brand, q) => !q || String(brand || '').toLowerCase() === String(q).toLowerCase() || nameMatch(brand, q);
+
+const CHAT_TOOLS_IMPL = {
+  async list_sources(){
+    const [soc, gsc, nl, shop, pm] = await Promise.all([
+      ovOnce('social', async () => await api('social')).catch(e => ({ error: e.message })),
+      ovOnce('gscSites', loadGscSites).catch(e => ({ error: e.message })),
+      ovOnce('nlBrands', async () => (await api('klaviyo_accounts')).brands || []).catch(e => ({ error: e.message })),
+      ovOnce('shopBrands', async () => (await api('shopify_stores')).brands || []).catch(e => ({ error: e.message })),
+      ovOnce('pmAccounts', async () => (await api('pm_accounts')).accounts || []).catch(e => ({ error: e.message }))
+    ]);
+    const socialAccounts = soc && soc.rows ? [...new Map(soc.rows.map(r => [r.platform + '|' + r.account, { platform: r.platform, account: r.account, brand: ovMap('social', r.account) }])).values()] : soc;
+    return {
+      today: iso(today()),
+      brands: OV_BRANDS.map(b => ({ brand: b.brand, group: b.group })),
+      ga4_properties: (state.properties || []).filter(p => !OV_EXCLUDE_GA.some(x => p.name.toLowerCase().includes(x))).map(p => ({ name: p.name, brand: ovMap('ga', p.name) })),
+      search_console_sites: Array.isArray(gsc) ? gsc.filter(s => !s.covered).map(s => ({ site: s.name, brand: ovMap('gsc', s.name) })) : gsc,
+      social_accounts: socialAccounts, social_data_from: soc && soc.firstDate, social_data_until: soc && soc.lastDate, social_posts_connected: !!(soc && soc.postsConnected),
+      newsletter_brands: Array.isArray(nl) ? nl.map(b => ({ brand: b, mapped_to: ovMap('klaviyo', b) })) : nl,
+      shopify_stores: Array.isArray(shop) ? shop.map(s => ({ store: s, brand: ovMap('shop', s) })) : shop,
+      ad_accounts: Array.isArray(pm) ? pm.map(a => ({ name: a.name, platform: pmPlat(a), brand: ovMap(pmPlat(a) === 'meta' ? 'meta' : 'gads', a.id) })) : pm,
+      not_connected_yet: ['Amazon Seller Central']
+    };
+  },
+
+  async get_overview(inp){
+    const R = toolRange(inp), Rg = toolRange(inp, 3);
+    const { data, issues } = await ovCollect(R, Rg);
+    const brands = Object.keys(data).map(b => {
+      const x = ovSum(data, [b], 'cur'), y = ovSum(data, [b], 'prev');
+      const pick = (o) => ({ sales: r2(o.sales), orders: o.orders, new_customers: o.newCustomers, ad_spend: r2(o.spend), spend_google: r2(o.spendGoogle), spend_meta: r2(o.spendMeta),
+        blended_roas: o.sales != null && o.spend ? r2(o.roas) : null, cost_per_new_customer: o.sales != null && o.newCustomers ? r2(o.cac) : null, website_users: o.users, organic_search_clicks: o.gscClicks,
+        social_reach: o.reach, social_engagement_rate_pct: o.engRate != null ? r2(o.engRate * 100) : null, email_revenue: r2(o.emailRevenue), newsletter_net_new_subscribers: o.netSubs });
+      return { brand: b, group: OV_GROUP[b] || 'Other', current: pick(x), comparison: pick(y), followers_latest: x.followers || null, newsletter_subscribers_latest: x.subscribers || null };
+    });
+    const all = (part) => { const o = ovSum(data, Object.keys(data), part); return { sales: r2(o.sales), orders: o.orders, new_customers: o.newCustomers, ad_spend: r2(o.spend), blended_roas: r2(o.roas), cost_per_new_customer: r2(o.cac), website_users: o.users, organic_search_clicks: o.gscClicks, social_reach: o.reach, email_revenue: r2(o.emailRevenue) }; };
+    return { periods: per(R), note: 'Search Console uses periods ending 3 days ago.', portfolio: { current: all('cur'), comparison: all('prev') }, brands, issues };
+  },
+
+  async get_web_analytics(inp){
+    const R = toolRange(inp);
+    const props = (state.properties || []).filter(p => !OV_EXCLUDE_GA.some(x => p.name.toLowerCase().includes(x)) && nameMatch(p.name, inp.property));
+    if (!props.length) return { error: 'No GA4 property matches that name.', available: (state.properties || []).map(p => p.name) };
+    const out = [];
+    for (const p of props.slice(0, 8)){
+      const d = await fetchCore(p, R); const c = derive(d.totals.cur), pv = d.totals.prev ? derive(d.totals.prev) : null;
+      const m = (o) => o && ({ users: o.activeUsers, new_users: o.newUsers, sessions: o.sessions, engagement_rate_pct: r2(o.engagementRate * 100), views: o.screenPageViews, key_events: o.keyEvents });
+      const row = { property: p.name, brand: ovMap('ga', p.name), current: m(c), comparison: m(pv),
+        channels: (d.channels || []).sort((a, b) => b.sessions - a.sessions).slice(0, 8).map(x => ({ channel: x.sessionDefaultChannelGroup, sessions: x.sessions, key_events: x.keyEvents })) };
+      if (props.length === 1){
+        const dt = await fetchDetail(p, R);
+        row.top_pages = dt.pages.slice(0, 15).map(x => ({ page: x.pagePath, views: x.screenPageViews, users: x.activeUsers, key_events: x.keyEvents }));
+        row.landing_pages = dt.landing.slice(0, 10).map(x => ({ page: x.landingPage, sessions: x.sessions, key_events: x.keyEvents }));
+        row.sources = dt.sources.slice(0, 10).map(x => ({ source_medium: x.sessionSourceMedium, sessions: x.sessions, key_events: x.keyEvents }));
+        row.key_events = dt.events.slice(0, 10).map(x => ({ event: x.eventName, count: x.keyEvents }));
+      }
+      out.push(row);
+    }
+    return { periods: per(R), properties: out };
+  },
+
+  async get_search_console(inp){
+    const R = toolRange(inp, 3);
+    const sites = (await ovOnce('gscSites', loadGscSites)).filter(s => inp.site ? nameMatch(s.name, inp.site) : !s.covered);
+    if (!sites.length) return { error: 'No Search Console site matches that name.' };
+    const out = [];
+    for (const s of sites.slice(0, 8)){
+      const d = await fetchGscCore(s, R); const c = gDerive(d.totals.cur), pv = d.totals.prev ? gDerive(d.totals.prev) : null;
+      const m = (o) => o && ({ clicks: o.clicks, impressions: o.impressions, ctr_pct: r2(o.ctr * 100), avg_position: r2(o.position) });
+      const row = { site: s.name, brand: ovMap('gsc', s.name), current: m(c), comparison: m(pv) };
+      if (sites.length === 1){
+        const dt = await fetchGscDetail(s, R);
+        row.top_queries = dt.queries.slice(0, 20).map(q => ({ query: q.query, clicks: q.clicks, impressions: q.impressions, ctr_pct: r2(q.ctr * 100), position: r2(q.position) }));
+        row.top_pages = dt.pages.slice(0, 15).map(q => ({ page: q.page, clicks: q.clicks, impressions: q.impressions, position: r2(q.position) }));
+      }
+      out.push(row);
+    }
+    return { periods: per(R), note: 'Search Console data ends 3 days ago.', sites: out };
+  },
+
+  async get_social(inp){
+    const R = toolRange(inp);
+    const s = await ovOnce('social', async () => await api('social'));
+    const ok = (r) => brandMatch(ovMap('social', r.account), inp.brand) && (!inp.platform || r.platform === String(inp.platform).toLowerCase());
+    const win = (w) => (s.rows || []).filter(r => !r.snapshot && ok(r) && r.date >= iso(w.start) && r.date <= iso(w.end));
+    const agg = (rows) => { const m = new Map(); rows.forEach(r => { const k = r.platform + '|' + r.account; const o = m.get(k) || { platform: r.platform, account: r.account, brand: ovMap('social', r.account), reach: 0, impressions: 0, engagements: 0, new_followers: null };
+      o.reach += r.reach || 0; o.impressions += r.impressions || 0; o.engagements += r.engagements || 0; if (r.newFollowers != null) o.new_followers = (o.new_followers || 0) + r.newFollowers; m.set(k, o); }); return m; };
+    const c = agg(win(R.cur)), p = R.prev ? agg(win(R.prev)) : new Map();
+    const latest = new Map(); (s.rows || []).forEach(r => { if (r.followers == null || !ok(r) || r.date > iso(addDays(R.cur.end, 1))) return; const k = r.platform + '|' + r.account; const x = latest.get(k); if (!x || r.date > x.date) latest.set(k, r); });
+    const accounts = [...c.entries()].map(([k, o]) => ({ ...o, engagement_rate_pct: o.impressions ? r2(o.engagements / o.impressions * 100) : null, followers_latest: latest.get(k)?.followers ?? null,
+      comparison: p.get(k) ? { reach: p.get(k).reach, impressions: p.get(k).impressions, engagements: p.get(k).engagements, new_followers: p.get(k).new_followers } : null }));
+    const posts = (s.posts || []).filter(x => brandMatch(brandOf(x), inp.brand) && (!inp.platform || x.platform === String(inp.platform).toLowerCase()) && x.published >= iso(R.cur.start) && x.published <= iso(R.cur.end))
+      .sort((a, b) => (b.reach || 0) - (a.reach || 0)).slice(0, 15).map(x => ({ published: x.published, brand: brandOf(x), platform: x.platform, type: x.type, text: (x.text || '').slice(0, 160), reach: x.reach, impressions: x.impressions, engagements: x.engagements, url: x.url }));
+    return { periods: per(R), data_until: s.lastDate, data_from: s.firstDate, accounts, top_posts_in_period: s.postsConnected ? posts : 'Post-level data is not connected.' };
+  },
+
+  async get_newsletter(inp){
+    const R = toolRange(inp);
+    const brands = (await ovOnce('nlBrands', async () => (await api('klaviyo_accounts')).brands || [])).filter(b => brandMatch(b, inp.brand) || brandMatch(ovMap('klaviyo', b), inp.brand));
+    if (!brands.length) return { error: 'No newsletter brand matches that name.' };
+    const out = [];
+    for (const b of brands){
+      const d = await nlBrandData(b, R);
+      const t = (x) => { const o = nlTotals(x); return { delivered: o.received, opens: o.opened, clicks: o.clicked, new_subscribers: o.subscribed, unsubscribes: o.unsubscribed, revenue: o.hasRevenue ? r2(o.revenue) : null, revenue_flows: o.hasRevenue ? r2(o.revenueFlows) : null, revenue_campaigns: o.hasRevenue ? r2(o.revenueCampaigns) : null }; };
+      const camps = (d.camp.campaigns || []).filter(c => c.sent && c.sent >= iso(R.cur.start) && c.sent <= iso(R.cur.end)).map(c => ({ name: c.name, sent: c.sent, recipients: c.recipients, open_rate_pct: c.delivered ? r2(c.opens / c.delivered * 100) : null, click_rate_pct: c.delivered ? r2(c.clicks / c.delivered * 100) : null, unsubscribes: c.unsubscribes, revenue: d.camp.hasRevenue ? r2(c.revenue) : null }));
+      out.push({ brand: b, current: t(d.dCur), comparison: d.dPrev ? t(d.dPrev) : null, campaigns_sent_in_period: camps, lists: (d.lists.lists || []).map(l => ({ list: l.name, profiles: l.profiles })), errors: [d.camp.error, d.lists.error].filter(Boolean) });
+    }
+    return { periods: per(R), note: 'Opens include Apple Mail privacy opens. Revenue is Klaviyo-attributed (flows + campaigns).', brands: out };
+  },
+
+  async get_shop(inp){
+    const R = toolRange(inp);
+    const stores = (await ovOnce('shopBrands', async () => (await api('shopify_stores')).brands || [])).filter(s => nameMatch(s, inp.store));
+    if (!stores.length) return { error: 'No Shopify store matches that name.' };
+    const out = [];
+    for (const s of stores){
+      const c = await shopFetch(s, iso(R.cur.start), iso(R.cur.end)), p = R.prev ? await shopFetch(s, iso(R.prev.start), iso(R.prev.end)) : null;
+      const m = (d) => d && ({ total_sales: r2(d.totals.sales), net_sales: r2(d.totals.net), orders: d.totals.orders, aov: r2(d.totals.aov), items: d.totals.items, new_customers: d.totals.newCustomers, returning_customers: d.totals.returningCustomers, returns: r2(d.totals.reversals) });
+      out.push({ store: s, brand: ovMap('shop', s), currency: c.currency, current: m(c), comparison: m(p),
+        top_products: (c.products || []).map(x => ({ product: x.product, net_sales: r2(x.net), items: x.items })), channels: c.channels, countries: c.countries, errors: c.errors });
+    }
+    return { periods: per(R), stores: out };
+  },
+
+  async get_paid_media(inp){
+    const R = toolRange(inp);
+    const accs = (await ovOnce('pmAccounts', async () => (await api('pm_accounts')).accounts || []))
+      .filter(a => (!inp.platform || pmPlat(a) === String(inp.platform).toLowerCase()) && nameMatch(a.name, inp.account) && brandMatch(ovMap(pmPlat(a) === 'meta' ? 'meta' : 'gads', a.id), inp.brand));
+    if (!accs.length) return { error: 'No ad account matches these filters.' };
+    const out = [];
+    for (const a of accs){
+      const c = await adsFetch(a, iso(R.cur.start), iso(R.cur.end)), p = R.prev ? await adsFetch(a, iso(R.prev.start), iso(R.prev.end)) : null;
+      const m = (d) => { if (!d) return null; const t = adsDerive(adsTotal(d)); return { spend: r2(t.spend), impressions: t.impressions, clicks: t.clicks, ctr_pct: t.ctr != null ? r2(t.ctr * 100) : null, cpc: r2(t.cpc), conversions: r2(t.conversions), conversion_value: r2(t.value), cost_per_conversion: r2(t.cpa), roas: r2(t.roas) }; };
+      out.push({ account: a.name, platform: pmPlat(a), brand: ovMap(pmPlat(a) === 'meta' ? 'meta' : 'gads', a.id), currency: a.currency, current: m(c), comparison: m(p),
+        top_campaigns: (c.campaigns || []).slice(0, 10).map(x => { const t = adsDerive(x); return { campaign: x.name, type: x.type, status: x.status, spend: r2(t.spend), clicks: t.clicks, conversions: r2(t.conversions), roas: r2(t.roas) }; }),
+        devices_or_placements: (c.devices || []).map(x => ({ name: x.device, spend: r2(x.spend) })) });
+    }
+    return { periods: per(R), note: 'Meta clicks are link clicks and conversions are Pixel website purchases. Google conversions follow each account\'s setup.', accounts: out };
+  },
+
+  async get_daily_series(inp){
+    const src = inp.source, metric = String(inp.metric || '').toLowerCase();
+    const R = toolRange({ start: inp.start, end: inp.end }, src === 'search' ? 3 : 1);
+    const dates = dateList(R.cur).map(d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+    const series = Object.fromEntries(dates.map(d => [d, 0]));
+    const addS = (d, v) => { if (d in series && v != null && !isNaN(v)) series[d] += v; };
+    if (src === 'social'){
+      const s = await ovOnce('social', async () => await api('social'));
+      const k = metric.startsWith('eng') ? 'engagements' : metric.startsWith('imp') ? 'impressions' : 'reach';
+      (s.rows || []).filter(r => !r.snapshot && brandMatch(ovMap('social', r.account), inp.brand)).forEach(r => addS(r.date, r[k]));
+    } else if (src === 'shop'){
+      const stores = (await ovOnce('shopBrands', async () => (await api('shopify_stores')).brands || [])).filter(s => brandMatch(ovMap('shop', s), inp.brand));
+      const k = metric.startsWith('order') ? 'orders' : metric.startsWith('net') ? 'net' : metric.startsWith('item') ? 'items' : 'sales';
+      for (const s of stores){ const d = await shopFetch(s, iso(R.cur.start), iso(R.cur.end)); Object.entries(d.daily || {}).forEach(([day, x]) => addS(day, x[k])); }
+    } else if (src === 'paid'){
+      const accs = (await ovOnce('pmAccounts', async () => (await api('pm_accounts')).accounts || [])).filter(a => brandMatch(ovMap(pmPlat(a) === 'meta' ? 'meta' : 'gads', a.id), inp.brand));
+      const k = metric.startsWith('click') ? 'clicks' : metric.startsWith('conv') ? 'conversions' : metric.startsWith('val') || metric.startsWith('rev') ? 'value' : metric.startsWith('imp') ? 'impressions' : 'spend';
+      for (const a of accs){ const d = await adsFetch(a, iso(R.cur.start), iso(R.cur.end)); Object.entries(d.daily || {}).forEach(([day, x]) => addS(day, x[k])); }
+    } else if (src === 'newsletter'){
+      const brands = (await ovOnce('nlBrands', async () => (await api('klaviyo_accounts')).brands || [])).filter(b => brandMatch(ovMap('klaviyo', b), inp.brand) || brandMatch(b, inp.brand));
+      const k = ['received', 'opened', 'clicked', 'subscribed', 'unsubscribed', 'revenue'].find(x => metric.startsWith(x.slice(0, 4))) || 'received';
+      for (const b of brands){ const d = await nlFetch('klaviyo_daily', b, { start: iso(R.cur.start), end: iso(R.cur.end) }); Object.entries(d[k] || {}).forEach(([day, v]) => addS(day, v)); }
+    } else if (src === 'web'){
+      const props = (state.properties || []).filter(p => !OV_EXCLUDE_GA.some(x => p.name.toLowerCase().includes(x)) && brandMatch(ovMap('ga', p.name), inp.brand));
+      const k = metric.startsWith('sess') ? 'sessions' : metric.startsWith('view') ? 'screenPageViews' : metric.startsWith('key') ? 'keyEvents' : 'activeUsers';
+      for (const p of props){ const d = await fetchCore(p, R); d.daily.cur.forEach((x, day) => addS(`${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)}`, x[k])); }
+    } else if (src === 'search'){
+      const sites = (await ovOnce('gscSites', loadGscSites)).filter(s => !s.covered && brandMatch(ovMap('gsc', s.name), inp.brand));
+      const k = metric.startsWith('imp') ? 'impressions' : 'clicks';
+      for (const s of sites){ const d = await fetchGscCore(s, R); d.daily.cur.forEach((x, day) => addS(`${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6,8)}`, x[k])); }
+    } else return { error: 'Unknown source.' };
+    const vals = Object.values(series), avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    return { source: src, metric, brand: inp.brand || 'all', period: per(R).current, daily: Object.fromEntries(Object.entries(series).map(([d, v]) => [d, r2(v)])), average_per_day: r2(avg),
+      top_days: Object.entries(series).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([d, v]) => ({ date: d, value: r2(v) })) };
+  }
+};
+const TOOL_LABEL = { list_sources: 'Checking connected sources', get_overview: 'Pulling the overview across all brands', get_web_analytics: 'Looking at website data', get_search_console: 'Looking at Search Console',
+  get_social: 'Looking at social media', get_newsletter: 'Looking at newsletter data', get_shop: 'Looking at Shopify sales', get_paid_media: 'Looking at paid media', get_daily_series: 'Checking day-by-day figures' };
+
+function mdLite(src){
+  const lines = esc(src).split('\n'); let html = '', list = null, table = null;
+  const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*(?!\s)(.+?)\*(?!\*)/g, '$1<i>$2</i>').replace(/`(.+?)`/g, '<code>$1</code>');
+  const flush = () => { if (list){ html += `</${list}>`; list = null; } if (table){ html += '</tbody></table></div>'; table = null; } };
+  for (const raw of lines){
+    const l = raw.trimEnd();
+    if (/^\s*\|.*\|\s*$/.test(l)){
+      const cells = l.trim().slice(1, -1).split('|').map(c => c.trim());
+      if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;
+      if (!table){ flush(); html += `<div class="tw"><table><thead><tr>${cells.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>`; table = true; continue; }
+      html += `<tr>${cells.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`; continue;
+    }
+    let m;
+    if ((m = l.match(/^\s*[-*•]\s+(.*)/))){ if (table) flush(); if (list !== 'ul'){ flush(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(m[1])}</li>`; continue; }
+    if ((m = l.match(/^\s*\d+[.)]\s+(.*)/))){ if (table) flush(); if (list !== 'ol'){ flush(); html += '<ol>'; list = 'ol'; } html += `<li>${inline(m[1])}</li>`; continue; }
+    flush();
+    if ((m = l.match(/^#{1,4}\s+(.*)/))){ html += `<h4>${inline(m[1])}</h4>`; continue; }
+    if (l.trim()) html += `<p>${inline(l)}</p>`;
+  }
+  flush();
+  return html;
+}
+
+function askLog(html, cls){ const d = document.createElement('div'); d.className = cls; d.innerHTML = html; $('askLog').appendChild(d); $('askLog').scrollTop = $('askLog').scrollHeight; return d; }
+function askWelcome(){
+  $('askLog').innerHTML = '';
+  askLog('<p>Ask anything about your marketing performance. I fetch the numbers from all connected sources and dig into causes.</p>', 'ask-m bot');
+  const chips = ['Summarise the last 28 days for management', 'Which brand improved most this month, and why?', 'What drove the biggest social reach spike recently?', 'Where is ad spend least efficient, and what should we change?'];
+  const c = askLog(chips.map(q => `<button>${esc(q)}</button>`).join(''), 'ask-chips');
+  c.querySelectorAll('button').forEach(b => b.onclick = () => askSend(b.textContent));
+}
+function chatContext(){
+  const R = getRanges(1);
+  return { today: iso(today()), current_tab: state.tab, dashboard_period: per(R),
+    filters: { overview_group: state.ovGroup, overview_brand: state.ovBrand, social_brand: state.socBrand, social_channel: state.socChannel, newsletter_brand: state.nlBrand, shop_store: state.shopBrand, paid_platform: state.pmPlatform, paid_account: state.adsAccount },
+    brands: OV_BRANDS.map(b => `${b.brand} (${b.group})`) };
+}
+async function askSend(text){
+  text = (text || '').trim();
+  if (!text || chat.busy) return;
+  chat.busy = true; $('askSend').disabled = true;
+  $('askLog').querySelectorAll('.ask-chips').forEach(x => x.remove());
+  askLog(esc(text), 'ask-m user');
+  chat.messages.push({ role: 'user', content: text });
+  try {
+    for (let round = 0; round < 10; round++){
+      const step = askLog('Thinking…', 'ask-step run');
+      const r = await api('chat', null, { messages: chat.messages, context: chatContext() });
+      step.remove();
+      chat.messages.push({ role: 'assistant', content: r.content });
+      const textOut = (r.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      const calls = (r.content || []).filter(b => b.type === 'tool_use');
+      if (textOut && !calls.length) askLog(mdLite(textOut), 'ask-m bot');
+      else if (textOut) askLog(esc(textOut), 'ask-step');
+      if (r.stop_reason !== 'tool_use' || !calls.length) break;
+      const results = [];
+      for (const call of calls){
+        const s = askLog(esc(TOOL_LABEL[call.name] || call.name) + '…', 'ask-step run');
+        let out;
+        try { out = await CHAT_TOOLS_IMPL[call.name](call.input || {}); }
+        catch(e){ if (e instanceof AuthError) throw e; out = { error: e.message }; }
+        s.classList.remove('run');
+        let content = JSON.stringify(out);
+        if (content.length > 60000) content = content.slice(0, 60000) + '…(truncated)';
+        results.push({ type: 'tool_result', tool_use_id: call.id, content });
+      }
+      chat.messages.push({ role: 'user', content: results });
+      if (round === 9) askLog('I stopped after several lookups. Try a more specific question.', 'ask-err');
+    }
+  } catch(e){
+    if (e instanceof AuthError){ handleAuthLost(e); }
+    askLog(esc(e.message), 'ask-err');
+    // keep the conversation valid: drop an unanswered user turn
+    while (chat.messages.length && chat.messages[chat.messages.length - 1].role === 'user' && typeof chat.messages[chat.messages.length - 1].content === 'string') chat.messages.pop();
+    if (chat.messages.length && chat.messages[chat.messages.length - 1].role === 'assistant' && (chat.messages[chat.messages.length - 1].content || []).some(b => b.type === 'tool_use')) chat.messages.pop();
+  } finally {
+    chat.busy = false; $('askSend').disabled = false; $('askInput').focus();
+  }
+}
+function bindAsk(){
+  $('askOpen').hidden = false;
+  $('askOpen').onclick = () => { $('askPanel').hidden = false; $('askOpen').hidden = true; if (!$('askLog').children.length) askWelcome(); setTimeout(() => $('askInput').focus(), 50); };
+  $('askClose').onclick = () => { $('askPanel').hidden = true; $('askOpen').hidden = false; };
+  $('askNew').onclick = () => { if (chat.busy) return; chat.messages = []; askWelcome(); };
+  $('askSend').onclick = () => { const v = $('askInput').value; $('askInput').value = ''; askSend(v); };
+  $('askInput').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); $('askSend').click(); } };
+}
+
 // Show any unexpected error on screen instead of failing silently.
-const DASHBOARD_VERSION = '2026-10-14.5';
+const DASHBOARD_VERSION = '2026-10-16.1';
 function showCrash(msg){
   try {
     setStatus('');
@@ -2608,6 +3026,7 @@ window.addEventListener('unhandledrejection', (e) => showCrash((e.reason && (e.r
 
 (function boot(){
   bindUI();
+  bindAsk();
   const v = document.createElement('p'); v.className = 'footnote'; v.style.cssText = 'text-align:center;margin:40px 0 0';
   v.textContent = 'Dashboard version ' + DASHBOARD_VERSION; document.querySelector('main').appendChild(v);
   enterDashboard();
