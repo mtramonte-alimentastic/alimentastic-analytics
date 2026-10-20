@@ -1,0 +1,1403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hours report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+/* Layout: Arbeitswerkzeug. Kopf mit Logo und Dateistatus, darunter Zeitraum und Reiter, Inhalt als Kennzahlen, Balken und Tabellen. Rot nur als Akzent. */
+:root{
+  --bg:#ffffff; --surface:#f7f5f5; --ink:#141212; --ink-2:#5e5858; --ink-3:#c4bdbd; --line:#e7e2e2;
+  --red:#D6001C; --red-soft:#fdeef0; --red-3:#f0a3ad;
+  --ok:#1b7548; --ok-soft:#e6f3ec; --warn:#94580a; --warn-soft:#fbf1df; --crit:#b3001a; --crit-soft:#fde9eb;
+  --f-body:"Barlow","Helvetica Neue",Arial,sans-serif;
+  --f-label:"Barlow Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f0e0e; --surface:#1a1818; --ink:#f3f0f0; --ink-2:#aaa3a3; --ink-3:#5a5454; --line:#2d2a2a;
+    --red:#f0283f; --red-soft:#3a1419; --red-3:#7d2230;
+    --ok:#5cc690; --ok-soft:#14291e; --warn:#e3a54a; --warn-soft:#2e2312; --crit:#ff6b7c; --crit-soft:#3a1419;
+    color-scheme:dark;
+  }
+  :root:not([data-theme="light"]) .logo-light{display:none}
+  :root:not([data-theme="light"]) .logo-dark{display:block}
+}
+:root[data-theme="dark"]{
+  --bg:#0f0e0e; --surface:#1a1818; --ink:#f3f0f0; --ink-2:#aaa3a3; --ink-3:#5a5454; --line:#2d2a2a;
+  --red:#f0283f; --red-soft:#3a1419; --red-3:#7d2230;
+  --ok:#5cc690; --ok-soft:#14291e; --warn:#e3a54a; --warn-soft:#2e2312; --crit:#ff6b7c; --crit-soft:#3a1419;
+  color-scheme:dark;
+}
+:root[data-theme="dark"] .logo-light{display:none}
+:root[data-theme="dark"] .logo-dark{display:block}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:20px 60px}
+h1,h2,h3{margin:0;text-wrap:balance;line-height:1.15}
+h1{font-size:1.6rem;font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.2rem;font-weight:700}
+h3{font-size:1rem;font-weight:600}
+p{margin:0}
+.label{font-family:var(--f-label);font-weight:600;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.muted{color:var(--ink-2)}
+.num{font-variant-numeric:tabular-nums}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+
+/* Kopf */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:16px 24px;justify-content:space-between;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:18px;min-width:0}
+.logo{height:34px;width:auto}
+.logo-dark{display:none}
+.brand .sep{width:1px;height:34px;background:var(--line)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--ink-2)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.primary:hover{opacity:.88}
+.btn.small{padding:5px 10px;font-size:.88rem}
+.btn svg{width:16px;height:16px;flex:none}
+
+/* Dateien */
+.files{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+#files{margin-top:20px}
+.file{border:1px dashed var(--ink-3);border-radius:8px;padding:10px 12px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.file.on{border-style:solid;border-color:var(--line);background:var(--surface)}
+.file .fname{font-size:.82rem;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .dept{font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px;background:var(--ink-3)}
+.file.on .dot{background:var(--ok)}
+.drop-hint{margin-top:8px;font-size:.85rem;color:var(--ink-2)}
+body.dragging .files{outline:2px dashed var(--red);outline-offset:6px;border-radius:10px}
+
+.banner{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;background:var(--red-soft);border-radius:8px;padding:10px 14px}
+.banner b{color:var(--red)}
+
+/* Zeitraum + Reiter */
+.bar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;margin-top:22px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:7px 14px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.period{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+select,input[type=text],input[type=number]{border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:7px 10px;min-width:0}
+.navrow{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 20px;margin-top:20px;border-bottom:1px solid var(--line)}
+.navrow .period{padding-bottom:8px}
+.navrow .seg button{padding:6px 12px}
+.tabs{display:flex;gap:2px;overflow-x:auto;min-width:0}
+.more{position:relative}
+.more summary{list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:15;min-width:240px;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:6px;display:flex;flex-direction:column}
+.more .menu .mi{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:6px;cursor:pointer;font:inherit;color:inherit;text-decoration:none}
+.more .menu .mi:hover{background:var(--surface)}
+.more .menu .mi small{display:block;color:var(--ink-2);font-size:.8rem}
+.more .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.strip{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:.88rem;padding:7px 12px;border-radius:6px;background:var(--red-soft)}
+.strip b{color:var(--red)}
+.strip .lnk{border:0;background:none;padding:0;font:inherit;color:var(--red);text-decoration:underline;cursor:pointer}
+.tab{border:0;background:transparent;padding:10px 14px;cursor:pointer;font-weight:500;color:var(--ink-2);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;display:inline-flex;gap:8px;align-items:center}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--red)}
+.count{font-size:.75rem;font-weight:600;border-radius:999px;padding:1px 7px;background:var(--surface);color:var(--ink-2)}
+.count.crit{background:var(--crit-soft);color:var(--crit)}
+
+main{margin-top:24px;display:flex;flex-direction:column;gap:28px}
+.section{display:flex;flex-direction:column;gap:12px;min-width:0}
+.section-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+
+/* Kennzahlen */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--surface);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.kpi .v{font-size:1.55rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi .s{font-size:.82rem;color:var(--ink-2)}
+
+/* Tabellen */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-label);font-weight:600;font-size:.78rem;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);background:var(--surface);white-space:nowrap}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+tr.total td{font-weight:700;border-top:2px solid var(--ink)}
+td.wrap-text{min-width:220px}
+.empty{padding:28px;text-align:center;color:var(--ink-2)}
+
+/* Status */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;font-weight:600;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.crit{background:var(--crit-soft);color:var(--crit)}
+.pill.info{background:var(--surface);color:var(--ink-2)}
+.pill svg{width:12px;height:12px}
+.grid-status td{text-align:center;padding:6px 4px;min-width:56px}
+.grid-status td:first-child{text-align:left;padding-left:12px;white-space:nowrap}
+.cell{display:block;border-radius:4px;padding:5px 2px;font-size:.8rem;font-weight:600;font-variant-numeric:tabular-nums}
+.cell.ok{background:var(--ok-soft);color:var(--ok)}
+.cell.late{background:var(--crit-soft);color:var(--crit)}
+.cell.due{background:var(--warn-soft);color:var(--warn)}
+.cell.open{color:var(--ink-3)}
+.summary{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Balken */
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem;color:var(--ink-2)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.hbars{display:flex;flex-direction:column;gap:8px}
+.hbar{display:grid;grid-template-columns:minmax(110px,200px) 1fr 118px;gap:12px;align-items:center}
+.hbar .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{display:flex;gap:2px;height:18px;min-width:0}
+.seg-d,.seg-u,.seg-r,.seg-ru{border-radius:0 4px 4px 0}
+.seg-d{background:var(--ink)}
+.seg-u{background:var(--ink-3)}
+.seg-r{background:var(--red)}
+.seg-ru{background:var(--red-3)}
+.track span:not(:last-child){border-radius:0}
+.hbar .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.hbar .v small{font-weight:500;color:var(--ink-2)}
+.hbar.group{padding:6px 0}
+.hbar.group .n{font-weight:700;font-size:1.02rem}
+.hbar.group .track{height:26px}
+.hbar.group.reploid .n{color:var(--red)}
+.hbar.sub .n{padding-left:26px;color:var(--ink-2)}
+.hbar.sub .track{height:12px}
+.hbar.sub .v{font-weight:500}
+.tg{border:0;background:none;cursor:pointer;padding:0;display:inline-flex;gap:8px;align-items:center;font:inherit;font-weight:inherit;color:inherit;max-width:100%}
+.tg svg{width:12px;height:12px;flex:none;transition:transform .15s}
+.tg[aria-expanded="true"] svg{transform:rotate(90deg)}
+.tg .c{font-weight:500;color:var(--ink-2)}
+tr.grp td{font-weight:700;background:var(--surface)}
+tr.grp.reploid td{background:var(--red-soft)}
+tr.grp.reploid td:first-child{color:var(--red)}
+tr.sub td:first-child{padding-left:34px;color:var(--ink-2)}
+.kpi.hero{background:var(--red-soft)}
+.kpi.hero .label{color:var(--red)}
+.split{display:flex;gap:2px;height:34px;border-radius:6px;overflow:hidden}
+.split span{display:flex;align-items:center;padding:0 12px;font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;min-width:0}
+.split .r{background:var(--red);color:#fff}
+.split .d{background:var(--ink);color:var(--bg)}
+.split .a{background:var(--ink-3);color:var(--ink)}
+.cols{display:flex;align-items:flex-end;gap:6px;height:170px;padding-top:22px;border-bottom:1px solid var(--line);overflow-x:auto}
+.col{flex:1 0 34px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative}
+.col .b{width:70%;max-width:44px;background:var(--ink-3);border-radius:4px 4px 0 0;min-height:2px}
+.col.sel .b{background:var(--red)}
+.col .t{position:absolute;font-size:.75rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+.col-labels{display:flex;gap:6px;overflow-x:hidden}
+.col-labels span{flex:1 0 34px;text-align:center;font-size:.75rem;color:var(--ink-2)}
+
+.two{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:28px}
+.story{background:var(--surface);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;max-width:none}
+.story p{max-width:75ch}
+.story-actions{display:flex;flex-wrap:wrap;gap:8px}
+
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field small{color:var(--ink-2)}
+.radio{display:flex;gap:8px;align-items:flex-start;padding:6px 0;cursor:pointer}
+.radio input{margin-top:4px}
+.inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input.short{width:90px}
+.note{font-size:.85rem;color:var(--ink-2);max-width:75ch}
+
+.panel{border:1px solid var(--line);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.pfile{display:flex;flex-direction:column;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.pfile:last-of-type{border-bottom:0;padding-bottom:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--surface);border-radius:999px;padding:3px 10px;font-size:.82rem;font-variant-numeric:tabular-nums}
+details summary{cursor:pointer;color:var(--ink-2);font-size:.9rem}
+details[open] summary{margin-bottom:8px}
+.cell.lateok{background:var(--warn-soft);color:var(--warn)}
+button.cell{border:0;width:100%;cursor:pointer;font-family:inherit}
+button.cell:hover{outline:1px solid currentColor}
+.cell.exc{background:var(--surface);color:var(--ink-2);outline:1px dashed var(--ink-3)}
+.cell.inactive{color:var(--ink-3)}
+.grid-status tr.grp td{text-align:left;font-size:.78rem;letter-spacing:.05em;text-transform:uppercase;font-family:var(--f-label);color:var(--ink-2);padding:6px 12px}
+#excPanel{border-color:var(--ink-2)}
+.namecell{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.remind{display:inline-flex;gap:8px;font-size:.78rem}
+.remind a{color:var(--red);text-decoration:none;font-weight:600}
+.remind a:hover{text-decoration:underline}
+a.btn{text-decoration:none;color:inherit}
+.cellmenu{display:flex;gap:4px;justify-content:center}
+.ai{margin-top:6px;font-size:.82rem;padding:5px 8px;border-radius:6px;color:var(--ink)}
+.ai.ok{background:var(--ok-soft)}
+.ai.ok b{color:var(--ok)}
+.ai.ask{background:var(--warn-soft)}
+.ai.ask b{color:var(--warn)}
+.cellmenu .btn{padding:3px 7px;font-size:.75rem}
+.file .who{font-size:.82rem;color:var(--ink-2)}
+.file .st{margin-top:4px}
+.hits{display:flex;flex-wrap:wrap;gap:6px}
+.resp{display:grid;grid-template-columns:minmax(110px,150px) minmax(0,1fr);gap:8px 12px;align-items:start}
+.resp > span{padding-top:7px}
+.loading{padding:48px 16px;text-align:center;color:var(--ink-2)}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:.82rem;padding:6px 10px;border-radius:6px;z-index:20;max-width:260px;white-space:pre-line}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;z-index:30;font-size:.9rem;max-width:calc(100% - 32px)}
+textarea.copybuf{position:fixed;left:-9999px;top:0}
+
+@media (max-width:860px){
+  .files{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .two{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:480px){
+  .wrap{padding-inline:16px}
+  .files{grid-template-columns:minmax(0,1fr)}
+  .hbar{grid-template-columns:minmax(80px,120px) 1fr 92px;gap:8px}
+  .hbar.sub .n{padding-left:14px}
+  .logo{height:28px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <img class="logo logo-light" src="data:image/png;base64,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" alt="Alimentastic">
+      <img class="logo logo-dark" src="data:image/png;base64,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" alt="">
+      <span class="sep" aria-hidden="true"></span>
+      <div>
+        <h1>Hours report</h1>
+        <p class="muted" style="font-size:.9rem" id="subtitle">Hours per brand from the weekly Brand Time submissions</p>
+      </div>
+    </div>
+    <div class="actions" id="actions">
+      <details class="more" id="exportBtn">
+        <summary class="btn">More <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <div class="menu" id="moreMenu"></div>
+      </details>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <div class="navrow" id="navrow">
+    <nav class="tabs" role="tablist" id="tabs"></nav>
+    <div class="period" id="periodBar">
+      <div class="seg" role="group" aria-label="Period type" id="modeSeg"></div>
+      <select id="periodSel" aria-label="Choose period"></select>
+      <span id="periodInfo" hidden></span>
+    </div>
+  </div>
+
+  <section id="files" aria-label="Latest submissions"></section>
+  <main id="main"></main>
+</div>
+<div id="tip" hidden></div>
+<div id="toast" hidden></div>
+<script>
+"use strict";
+const DAY = 864e5;
+const NO_TEAM = 'No team';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+/* ---------- helpers ---------- */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const bkey = s => String(s || '').toLowerCase().replace(/&/g, 'und').replace(/[^a-z0-9äöüß]/g, '');
+const fmtNum = (n, d = 1) => (n == null || isNaN(n)) ? '–' : n.toLocaleString('en-GB', {minimumFractionDigits: d, maximumFractionDigits: d});
+const fmtH = n => fmtNum(n, 1) + ' h';
+const fmtEur = n => '€ ' + Math.round(n).toLocaleString('en-GB');
+const fmtPct = n => fmtNum(n * 100, 0) + ' %';
+const pad = n => String(n).padStart(2, '0');
+const fmtDate = d => d ? `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}` : '';
+const fmtDateShort = d => `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.`;
+const round2 = n => Math.round(n * 100) / 100;
+const sum = arr => arr.reduce((a, b) => a + b, 0);
+const str = v => v == null ? '' : String(v).trim();
+const cap1 = s => s.replace(/^./, c => c.toUpperCase());
+const fmtTime = iso => iso ? new Date(iso).toLocaleString('en-GB', {weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '';
+
+/* Weeks are identified by their ISO id ("2026-W41"), which sorts correctly as text, also across New Year. */
+function mondayOf(wk) {
+  const [y, w] = wk.split('-W').map(Number);
+  const jan4 = Date.UTC(y, 0, 4);
+  const dow = (new Date(jan4).getUTCDay() + 6) % 7;
+  return new Date(jan4 - dow * DAY + (w - 1) * 7 * DAY);
+}
+function weekOf(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dow = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dow + 3);
+  const y = d.getUTCFullYear();
+  const first = mondayOf(y + '-W01');
+  return y + '-W' + pad(1 + Math.round((d - first - 3 * DAY) / (7 * DAY)));
+}
+const kwOf = wk => +String(wk).split('-W')[1];
+const addWeeks = (wk, n) => weekOf(new Date(mondayOf(wk).getTime() + n * 7 * DAY));
+function weekRange(a, b) { const out = []; let w = a; for (let i = 0; i < 260 && w <= b; i++) { out.push(w); w = addWeeks(w, 1); } return out; }
+function weekLabel(wk) { const s = mondayOf(wk), e = new Date(s.getTime() + 6 * DAY); return `Week ${kwOf(wk)} · ${fmtDateShort(s)}–${fmtDate(e)}`; }
+function monthLabel(m) { const [y, mo] = m.split('-').map(Number); return `${MONTHS[mo - 1]} ${y}`; }
+function workdays(m) {
+  const [y, mo] = m.split('-').map(Number); let n = 0;
+  for (let d = new Date(Date.UTC(y, mo - 1, 1)); d.getUTCMonth() === mo - 1; d = new Date(d.getTime() + DAY)) { const w = d.getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+function deadline(wk) { // the Monday after the week, end of day
+  const s = mondayOf(wk);
+  return new Date(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + 7, 23, 59, 59);
+}
+function dueStatus(wk) {
+  const dl = deadline(wk), now = new Date();
+  if (now > dl) return 'late';
+  if (now.toDateString() === dl.toDateString()) return 'due';
+  return 'open';
+}
+const nTokens = s => String(s || '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').replace(/[^a-z\s-]/g, ' ').split(/[\s-]+/).filter(Boolean);
+function prettyEmail(e) {
+  e = str(e); if (!e.includes('@')) return e;
+  return e.split('@')[0].split(/[._-]+/).filter(Boolean).map(t => t.length === 1 ? t.toUpperCase() + '.' : t[0].toUpperCase() + t.slice(1)).join(' ');
+}
+
+/* ---------- state ---------- */
+const defaultSettings = () => ({method: 'none', rates: {}, brands: {}, hideNames: true, autoAssign: true, includeDrafts: false, startWeek: null});
+const S = {
+  ready: false, error: '', cfg: {brands: [], tasks: []}, roster: [], weeksRaw: [], me: {email: ''}, teams: [], profileTeam: {},
+  settings: defaultSettings(), excuses: {}, acks: {}, people: {},
+  tab: 'overview', mode: 'week', period: null, brandSel: null, q: '',
+  open: {Reploid: true, Diverse: false, aus: false},
+  onlyMissing: false, showAcked: false, excEdit: null, cellMenu: null
+};
+let ROWS = [], DAYS = [], WEEKS = [], ISSUES = [], ISSUES_ACKED = [], CFG_BY_KEY = {};
+
+let writeChain = Promise.resolve();
+function persist(key, value) {
+  writeChain = writeChain.then(() => fetch('/api?op=reports-save', {
+    method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({key, value: JSON.parse(JSON.stringify(value))})
+  }).then(r => { if (!r.ok) throw new Error('save failed'); })).catch(() => toast('Could not save. Please try again.'));
+}
+const saveSettings = () => persist('settings', S.settings);
+const saveExcuses = () => persist('excuses', S.excuses);
+const saveAcks = () => persist('acks', S.acks);
+const savePeople = () => persist('people', S.people);
+
+async function loadData() {
+  const r = await fetch('/api?op=reports', {credentials: 'same-origin'});
+  if (r.status === 401) throw new Error('Please sign in again in Brand Time.');
+  if (r.status === 403) throw new Error('Reports are only available to admins.');
+  if (!r.ok) throw new Error('The report data could not be loaded.');
+  const j = await r.json();
+  S.cfg = j.config || {brands: [], tasks: []}; S.cfg.brands = S.cfg.brands || [];
+  S.roster = j.roster || []; S.weeksRaw = j.weeks || []; S.me = j.me || {email: ''};
+  S.teams = j.teams || []; S.profileTeam = {};
+  for (const p of (j.profiles || [])) if (p.email) S.profileTeam[String(p.email).toLowerCase()] = p.team || '';
+  const st = j.state || {};
+  S.settings = Object.assign(defaultSettings(), st.settings || {});
+  S.settings.rates = S.settings.rates || {}; S.settings.brands = S.settings.brands || {};
+  S.excuses = st.excuses || {}; S.acks = st.acks || {}; S.people = st.people || {};
+}
+
+/* ---------- brands, groups ---------- */
+/* Brands that belong to Reploid (group "Reploid" in all reports; changeable in Settings) */
+const REPLOID_BRANDS = new Set(['beakbandits', 'huhnglaublich', 'kreislaufei', 'schnauzeundco']);
+/* Items without a brand of their own: treated as "General" (changeable in Settings) */
+const OVERHEAD = new Set(['urlaub', 'krankenstand', 'zeitausgleich', 'feiertag', 'karenz', 'sial', 'allgemein', 'allemarken', 'vertrieballgemein', 'alimentastic', 'adminundreporting', 'teamundplanning', 'recruitingundonboarding', 'learningunddevelopment', 'petfood', 'organisation']);
+const GROUP_LABEL = {Reploid: 'Reploid', Diverse: 'Diverse brands', Allgemein: 'General (no brand)', aus: 'Not in investor report'};
+
+function knownBrands() {
+  const reg = new Map();
+  for (const b of S.cfg.brands) { const k = bkey(b.name); if (k && !reg.has(k)) reg.set(k, b.name); }
+  for (const [k, v] of Object.entries(S.settings.brands)) if (v && v.name && !reg.has(k)) reg.set(k, v.name);
+  return reg;
+}
+function brandKind(name) {
+  const c = S.settings.brands[bkey(name)] || {};
+  if (c.kind === 'allgemein' || c.kind === 'marke') return c.kind;
+  const cfg = CFG_BY_KEY[bkey(name)];
+  return (OVERHEAD.has(bkey(name)) || (cfg && cfg.group === 'internal')) ? 'allgemein' : 'marke';
+}
+const brandCfg = b => S.settings.brands[bkey(b)] || {};
+function groupOf(b) {
+  if (bkey(b) === 'allgemein' || brandKind(b) === 'allgemein') return 'Allgemein';
+  const c = brandCfg(b);
+  if (c.group === 'Reploid' || c.group === 'Diverse' || c.group === 'aus') return c.group;
+  return bkey(b).includes('reploid') || REPLOID_BRANDS.has(bkey(b)) ? 'Reploid' : 'Diverse';
+}
+const inInvestor = b => groupOf(b) !== 'aus';
+function groupsOf(list, withHidden) {
+  const gs = withHidden ? ['Reploid', 'Diverse', 'Allgemein', 'aus'] : ['Reploid', 'Diverse', 'Allgemein'];
+  return gs.map(g => {
+    const items = list.filter(x => groupOf(x.brand) === g);
+    const byDept = {};
+    for (const x of items) for (const [d, h] of Object.entries(x.byDept)) byDept[d] = (byDept[d] || 0) + h;
+    return {group: g, label: GROUP_LABEL[g], items, byDept, direct: sum(items.map(x => x.direct)), alloc: sum(items.map(x => x.alloc)), total: sum(items.map(x => x.total))};
+  }).filter(G => (G.group !== 'aus' && G.group !== 'Allgemein') || G.items.length);
+}
+const expandable = G => G.items.length > 1 || (G.items.length === 1 && bkey(G.items[0].brand) !== bkey(G.group));
+const CHEV = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function groupName(G) {
+  if (!expandable(G)) return esc(G.label);
+  return `<button class="tg" data-action="toggle-group" data-g="${G.group}" aria-expanded="${!!S.open[G.group]}">${CHEV}<span>${esc(G.label)}</span>${G.group !== 'Reploid' || G.items.length > 1 ? `<span class="c">${G.items.length}</span>` : ''}</button>`;
+}
+
+/* ---------- rows ---------- */
+/* A person's department is their team: an admin's override (Settings -> People) wins over what they chose themselves. */
+const deptOf = email => { const k = String(email).toLowerCase(); return str((S.people[k] || {}).team) || S.profileTeam[k] || NO_TEAM; };
+const deptRank = d => { const i = S.teams.indexOf(d); return i < 0 ? 99 : i; };
+const personName = email => str((S.people[String(email).toLowerCase()] || {}).name) || prettyEmail(email);
+function buildRaw() {
+  const rows = [], days = [];
+  const byId = new Map(S.cfg.brands.map(b => [b.id, b]));
+  for (const rec of S.weeksRaw) {
+    const doc = rec.doc; if (!doc) continue;
+    if (!(doc.submitted || S.settings.includeDrafts)) continue;
+    const week = rec.week, email = String(rec.email || '(unknown)').toLowerCase(), person = personName(email), dept = deptOf(email);
+    for (const iso of Object.keys(doc.days || {}).sort()) {
+      const d = doc.days[iso] || {}; const worked = typeof d.worked === 'number' ? d.worked : null; const rs = d.rows || [];
+      days.push({week, email, person, dept, iso, worked, n: rs.length, hours: sum(rs.map(x => +x.h || 0))});
+      for (const x of rs) {
+        const b = byId.get(x.b);
+        rows.push({week, kw: kwOf(week), dept, email, emp: email, person, iso, date: new Date(iso + 'T00:00:00Z'), month: iso.slice(0, 7),
+          brandRaw: b ? b.name : str(x.b), brandId: x.b, hours: +x.h || 0, topic: str(x.t), note: str(x.n), bmd: worked});
+      }
+    }
+  }
+  return {rows, days};
+}
+function normRows(rows, reg) {
+  return rows.map(r => {
+    const raw = str(r.brandRaw); const k = bkey(raw); let brand = raw, known = false, aliased = false;
+    if (k && reg.has(k)) { brand = reg.get(k); known = true; }
+    const alias = (S.settings.brands[bkey(brand)] || {}).alias;
+    if (alias && bkey(alias) !== bkey(brand)) { brand = alias; aliased = true; known = true; }
+    const kind = brand ? brandKind(brand) : '';
+    return Object.assign({}, r, {brand, known, aliased, isAllg: kind === 'allgemein'});
+  });
+}
+/* Finds brand names in a text (note or task) */
+function brandFinder(rows, reg) {
+  const names = new Map();
+  for (const n of reg.values()) if (brandKind(n) !== 'allgemein') names.set(bkey(n), n);
+  for (const r of rows) if (r.brand && !r.isAllg && brandKind(r.brand) !== 'allgemein') names.set(bkey(r.brand), r.brand);
+  const list = Array.from(names.entries()).filter(([k]) => k.length >= 3);
+  return text => {
+    const tk = bkey(text); const toks = new Set(nTokens(text).map(bkey));
+    const hits = list.filter(([k]) => k.length >= 5 ? tk.includes(k) : toks.has(k)).map(([, n]) => n);
+    return hits.filter(h => !hits.some(o => o !== h && bkey(o).includes(bkey(h))));
+  };
+}
+/* General rows whose task or note names a brand are assigned to that brand. Several brands share the hours equally. */
+function autoAssign(rows, reg) {
+  const find = brandFinder(rows, reg);
+  return rows.flatMap(r => {
+    if (!r.isAllg || !(r.hours > 0)) return [r];
+    let parts;
+    const topic = String(r.topic || '');
+    const head = topic.includes(':') ? find(topic.split(':')[0]) : [];
+    if (head.length) {
+      parts = head.map(b => ({b, sh: 1 / head.length}));
+    } else if (find(topic).length) {
+      const segs = []; let depth = 0, cur = '';
+      for (const ch of topic) {
+        if (ch === '(' || ch === '[') depth++;
+        if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+        if (depth === 0 && /[,;\n+]/.test(ch)) { segs.push(cur.trim()); cur = ''; } else cur += ch;
+      }
+      segs.push(cur.trim()); for (let i = segs.length - 1; i >= 0; i--) if (!segs[i]) segs.splice(i, 1);
+      const n = segs.length || 1; const acc = new Map(); let rest = 0;
+      for (const s of segs) { const h = find(s); if (!h.length) { rest += 1 / n; continue; } for (const b of h) acc.set(b, (acc.get(b) || 0) + 1 / n / h.length); }
+      if (!acc.size) { const h = find(r.topic); h.forEach(b => acc.set(b, 1 / h.length)); rest = 0; }
+      parts = Array.from(acc.entries()).map(([b, sh]) => ({b, sh}));
+      if (rest > 0.0001) parts.push({b: null, sh: rest});
+    } else {
+      const h = find(r.note || '');
+      if (!h.length) return [r];
+      parts = h.map(b => ({b, sh: 1 / h.length}));
+    }
+    const branded = parts.filter(p => p.b);
+    const desc = branded.map(p => `${fmtNum(r.hours * p.sh)} h ${p.b}`).join(', ');
+    return parts.map(p => p.b
+      ? Object.assign({}, r, {brand: p.b, isAllg: false, known: true, reassigned: true, assignDesc: desc, assignSum: sum(branded.map(q => r.hours * q.sh)), fromBrand: r.brand, splitFirst: p === branded[0], hours: r.hours * p.sh, origHours: r.hours})
+      : Object.assign({}, r, {hours: r.hours * p.sh, assignedRest: true}));
+  });
+}
+function rebuild() {
+  CFG_BY_KEY = {}; for (const b of S.cfg.brands) CFG_BY_KEY[bkey(b.name)] = b;
+  const reg = knownBrands();
+  const raw = buildRaw(); DAYS = raw.days;
+  ROWS = normRows(raw.rows, reg);
+  if (S.settings.autoAssign !== false) ROWS = autoAssign(ROWS, reg);
+  // weeks shown in selectors and status grids
+  const all = S.weeksRaw.map(w => w.week).concat(ROWS.map(r => r.week)).sort();
+  const nowWk = weekOf(new Date());
+  // Every week that has data stays selectable. "Track from week" (Settings) only decides from when missing
+  // submissions are flagged in the status grid; it must never hide data that exists.
+  const dataFirst = all[0] || nowWk;
+  const startSetting = S.settings.startWeek && S.settings.startWeek <= nowWk ? S.settings.startWeek : null;
+  const first = startSetting && startSetting < dataFirst ? startSetting : dataFirst;
+  const last = [nowWk, all[all.length - 1] || nowWk].sort().pop();
+  WEEKS = weekRange(first <= last ? first : last, last);
+}
+const counts = r => r.hours > 0 && r.brand;
+function inPeriod(r, mode = S.mode, p = S.period) {
+  if (mode === 'week') return r.week === p;
+  if (mode === 'month') return r.month === p;
+  return true;
+}
+const periodRows = (mode, p) => ROWS.filter(r => counts(r) && inPeriod(r, mode, p));
+/* Teams in their configured order, then any other department that shows up in the data (e.g. "No team"). */
+function deptsAll() {
+  const out = S.teams.slice();
+  for (const r of ROWS) if (r.dept && !out.includes(r.dept)) out.push(r.dept);
+  for (const e of S.roster) { const d = deptOf(e); if (!out.includes(d)) out.push(d); }
+  return out;
+}
+function weeksIn(mode, p, rows) {
+  if (mode === 'week') return 1;
+  if (mode === 'month') return workdays(p) / 5;
+  return Math.max(1, new Set(rows.map(r => r.week)).size);
+}
+const hasRates = () => Object.values(S.settings.rates).some(v => v > 0);
+const costOf = byDept => sum(Object.entries(byDept).map(([d, h]) => h * (S.settings.rates[d] || 0)));
+const methodLabel = () => ({none: 'General as its own item', dept: 'General allocated pro rata by department', all: 'General allocated pro rata across all departments', fixed: 'General allocated by fixed key'}[S.settings.method] || '');
+
+/* ---------- allocation of "General" hours ---------- */
+function allocate(rows) {
+  const direct = {}, alloc = {}, gen = {};
+  const add = (o, b, d, h) => { (o[b] = o[b] || {})[d] = (o[b][d] || 0) + h; };
+  const keepAllg = S.settings.method === 'none';
+  for (const r of rows) {
+    if (r.isAllg) { gen[r.dept] = (gen[r.dept] || 0) + r.hours; if (keepAllg) add(direct, r.brand || 'General', r.dept, r.hours); }
+    else add(direct, r.brand, r.dept, r.hours);
+  }
+  const brands = Object.keys(direct);
+  const totDir = b => sum(Object.values(direct[b] || {}));
+  const allDir = sum(brands.map(totDir));
+  let unallocated = 0;
+  const method = S.settings.method;
+  let keyed = [];
+  if (method === 'fixed') for (const v of Object.values(S.settings.brands)) if (v && v.key > 0) keyed.push([v.name, v.key]);
+  const keySum = sum(keyed.map(x => x[1]));
+  if (method !== 'none') for (const [d, A] of Object.entries(gen)) {
+    if (method === 'fixed' && keySum > 0) { for (const [b, k] of keyed) add(alloc, b, d, A * k / keySum); continue; }
+    const Dd = sum(brands.map(b => (direct[b] || {})[d] || 0));
+    if (method === 'dept' && Dd > 0) { for (const b of brands) { const h = (direct[b] || {})[d] || 0; if (h) add(alloc, b, d, A * h / Dd); } }
+    else if (allDir > 0) { for (const b of brands) add(alloc, b, d, A * totDir(b) / allDir); }
+    else unallocated += A;
+  }
+  const names = Array.from(new Set([...Object.keys(direct), ...Object.keys(alloc)]));
+  const list = names.map(b => {
+    const byDept = {}; let dsum = 0, asum = 0;
+    for (const d of deptsAll()) {
+      const x = (direct[b] || {})[d] || 0, y = (alloc[b] || {})[d] || 0;
+      if (x || y) byDept[d] = x + y; dsum += x; asum += y;
+    }
+    return {brand: b, byDept, direct: dsum, alloc: asum, total: dsum + asum};
+  }).sort((a, b) => b.total - a.total);
+  const genTotal = sum(Object.values(gen));
+  return {list, gen, genTotal, unallocated, total: sum(rows.map(r => r.hours))};
+}
+
+/* ---------- period ---------- */
+function defaultPeriod(mode = S.mode) {
+  const rows = ROWS.filter(counts);
+  if (mode === 'week') { const ks = rows.map(r => r.week).sort(); return ks.length ? ks[ks.length - 1] : addWeeks(weekOf(new Date()), -1); }
+  if (mode === 'month') { const ms = rows.map(r => r.month).sort(); return ms.length ? ms[ms.length - 1] : new Date().toISOString().slice(0, 7); }
+  return 'all';
+}
+function monthOptions() {
+  const set = new Set(ROWS.map(r => r.month)); set.add(new Date().toISOString().slice(0, 7));
+  return Array.from(set).sort();
+}
+function periodName(mode = S.mode, p = S.period) {
+  if (mode === 'week') { const s = mondayOf(p); return `in week ${kwOf(p)} (${fmtDateShort(s)}–${fmtDate(new Date(s.getTime() + 6 * DAY))})`; }
+  if (mode === 'month') return `in ${monthLabel(p)}`;
+  const ks = Array.from(new Set(ROWS.filter(counts).map(r => r.week))).sort();
+  return ks.length ? `from week ${kwOf(ks[0])} to week ${kwOf(ks[ks.length - 1])}` : 'across the whole period';
+}
+const periodSlug = () => S.mode === 'week' ? 'W' + kwOf(S.period) : S.mode === 'month' ? S.period : 'All';
+const periodCore = () => periodName().replace(/^(in|from) /, '');
+
+/* ---------- people and submission status ---------- */
+const REASONS = ['Vacation', 'Sick leave', 'Time off in lieu', 'Training / business trip', 'Parental leave', 'Other'];
+let DOCMAP = new Map();
+const docHours = doc => sum(Object.values((doc && doc.days) || {}).flatMap(d => (d.rows || []).map(r => +r.h || 0)));
+const startWk = () => (S.settings.startWeek && WEEKS.includes(S.settings.startWeek)) ? S.settings.startWeek : WEEKS[0];
+function peopleList() {
+  return S.roster.map(email => { const p = S.people[email] || {}; return {id: email, email, name: personName(email), dept: deptOf(email), required: p.required !== false, from: p.from || '', to: p.to || ''}; })
+    .sort((a, b) => deptRank(a.dept) - deptRank(b.dept) || a.dept.localeCompare(b.dept) || a.name.localeCompare(b.name));
+}
+function empStatus(e, wk) {
+  const ws = mondayOf(wk), we = new Date(ws.getTime() + 6 * DAY); const iso = d => d.toISOString().slice(0, 10);
+  const doc = DOCMAP.get(e.email.toLowerCase() + '|' + wk);
+  const submitted = !!(doc && doc.submitted);
+  if (wk < startWk() && !submitted) return {s: 'inactive'};
+  if ((e.from && e.from > iso(we)) || (e.to && e.to < iso(ws))) return {s: 'inactive'};
+  if (submitted) { const at = doc.submittedAt; return {s: 'ok', h: docHours(doc), at, late: !!(at && new Date(at) > deadline(wk))}; }
+  const x = S.excuses[e.id + '|' + wk]; if (x) return {s: 'exc', x};
+  const h = doc ? docHours(doc) : 0;
+  return {s: dueStatus(wk), draft: h > 0, h};
+}
+function empMissing(list, weeks) {
+  const out = [];
+  for (const e of list.filter(x => x.required)) { const kws = weeks.filter(w => empStatus(e, w).s === 'late'); if (kws.length) out.push({e, kws}); }
+  return out;
+}
+function shownWeeks(list) {
+  const out = [];
+  for (const w of WEEKS.filter(x => x >= startWk())) { out.push(w); if (list.every(e => ['open', 'inactive'].includes(empStatus(e, w).s))) break; }
+  return out;
+}
+function lastDueWeek() {
+  const today = new Date(); today.setHours(23, 59, 59, 0);
+  for (let i = WEEKS.length - 1; i >= 0; i--) if (deadline(WEEKS[i]) <= today) return WEEKS[i];
+  return null;
+}
+const REPORT_URL = () => location.origin;
+const firstName = e => { const t = String(e.name || '').split(/\s+/)[0]; return t.length > 2 ? t : ''; };
+const outlookLink = (to, subject, body) => `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+function reminderText(e, wks) {
+  return `Hi${firstName(e) ? ' ' + firstName(e) : ''},\n\nyour weekly hours for week ${wks.map(kwOf).join(', week ')} are still missing in Brand Time.\nPlease enter them and submit the week:\n${REPORT_URL()}\n\nIf you were on leave or off sick, just let me know.\n\nThanks!`;
+}
+function remindLinks(e, wks) {
+  if (!e.email) return '';
+  const subj = `Reminder: weekly hours, week ${wks.map(kwOf).join(', ')}`;
+  return `<span class="remind"><a href="${esc(outlookLink(e.email, subj, reminderText(e, wks)))}" target="_blank" rel="noopener" data-tip="${esc(`Open a reminder to ${e.email} in Outlook`)}">Remind</a></span>`;
+}
+function remindAllLink(em) {
+  const to = Array.from(new Set(em.map(x => x.e.email).filter(Boolean)));
+  if (!to.length) return '';
+  const body = `Hi all,\n\nat least one weekly submission is still missing in Brand Time. You can see which weeks are open on the "My week" page:\n${REPORT_URL()}\n\nPlease enter the hours and submit the week. If you were on leave or off sick, just let me know.\n\nThanks!`;
+  const href = `https://outlook.office.com/mail/deeplink/compose?bcc=${encodeURIComponent(to.join(','))}&subject=${encodeURIComponent('Reminder: weekly hours')}&body=${encodeURIComponent(body)}`;
+  return `<a class="btn small" href="${esc(href)}" target="_blank" rel="noopener" data-tip="${esc(`Open one email to ${to.length} people in Outlook (recipients in BCC)`)}">Remind everyone (Outlook)</a>`;
+}
+
+/* ---------- review: findings in the data ---------- */
+function findIssues(rows = ROWS) {
+  const iss = [];
+  const add = (sev, r, msg, det) => { const o = {sev, dept: r.dept, week: r.week, kw: r.kw, iso: r.iso, emp: r.person || r.emp, email: r.email, msg, det: det || ''}; iss.push(o); return o; };
+  const reg = knownBrands();
+  const mentionKeys = Array.from(reg.entries()).filter(([k, n]) => k.length >= 5 && brandKind(n) !== 'allgemein');
+  const findBrand = brandFinder(rows, reg);
+  const unknown = new Map();
+  for (const r of rows) {
+    const running = dueStatus(r.week) === 'open'; // current week: unfinished rows are normal
+    if ((r.hours == null || r.hours <= 0) && !running) add('warn', r, 'Hours missing', r.brand ? `${r.brand}: ${r.topic || 'no task'}` : '');
+    if (!r.brand) { if (r.hours > 0) add('crit', r, 'Brand missing', `${fmtH(r.hours)} are not counted.`); }
+    else if (!r.known && !r.isAllg) { const k = bkey(r.brand); const u = unknown.get(k) || {r, n: 0, h: 0}; u.n++; u.h += r.hours || 0; unknown.set(k, u); }
+    if (!r.topic && !running) add('info', r, 'Task missing');
+    if (r.reassigned) {
+      if (r.splitFirst) {
+        const bs = Array.from(new Set(r.assignDesc.split(', ').map(x => x.replace(/^[\d.,]+ h /, ''))));
+        add('warn', r, `Belongs to ${bs.join(', ')}`, `"${str(r.topic || r.note).slice(0, 90)}" (${fmtH(r.origHours)}) is booked as ${r.fromBrand}. Provisionally assigned automatically: ${r.assignDesc}${r.origHours - r.assignSum > 0.05 ? `, ${fmtH(r.origHours - r.assignSum)} stay General` : ''}. Please ask for ${bs.length > 1 ? 'the hours to be split across the brands' : `the hours to be booked on "${bs[0]}"`} in Brand Time.`);
+      }
+    } else if (r.isAllg && r.hours > 0 && !r.assignedRest) {
+      const hits = findBrand(r.topic || '').concat(r.topic ? [] : findBrand(r.note || ''));
+      if (hits.length) add('warn', r, `Belongs to ${hits.join(', ')}`, `"${str(r.topic || r.note).slice(0, 90)}" (${fmtH(r.hours)}) is booked as ${r.brand || 'General'} but names ${hits.join(', ')}. Please ask for ${hits.length > 1 ? 'the hours to be split across the brands' : `the hours to be booked on "${hits[0]}"`} in Brand Time.`);
+    } else if ((r.topic || r.note) && r.brand && !r.isAllg) {
+      const tk = bkey(r.topic + ' ' + r.note); const own = bkey(r.brand);
+      const hit = mentionKeys.find(([k]) => k !== own && tk.includes(k) && !own.includes(k));
+      if (hit) add('warn', r, 'Note does not match brand', `The note names "${hit[1]}" but the hours are booked on "${r.brand}": ${(r.note || r.topic).slice(0, 80)}`);
+    }
+  }
+  for (const u of unknown.values()) {
+    add('warn', u.r, 'Brand not in the brand list', `"${u.r.brand}" (${u.n} ${u.n > 1 ? 'entries' : 'entry'}, ${fmtH(u.h)}) is counted as its own brand. Add it in Brand Time under Brands, or merge it with an existing brand in Settings.`);
+  }
+  // Compare the day's assigned hours with the hours worked that day (BMD)
+  const groups = new Map();
+  for (const r of rows) { if (!r.iso) continue; const k = r.email + '|' + r.iso; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  const noBmd = new Map();
+  for (const g of groups.values()) {
+    const h = sum(g.map(r => r.hours || 0));
+    const vals = Array.from(new Set(g.map(r => r.bmd).filter(v => v != null)));
+    if (!vals.length && dueStatus(g[0].week) === 'open') continue;
+    if (!vals.length) { const k = g[0].email + '|' + g[0].week; const x = noBmd.get(k) || {r: g[0], days: []}; x.days.push(fmtDateShort(g[0].date)); noBmd.set(k, x); continue; }
+    const diff = h - vals[0];
+    if (Math.abs(diff) > 0.009) {
+      const why = Array.from(new Set(g.map(r => str(r.note)).filter(Boolean))).join('; ');
+      add(why ? 'warn' : 'crit', g[0], why ? 'BMD difference with note' : 'BMD difference without note',
+        `${fmtH(h)} recorded, BMD ${fmtH(vals[0])} (${diff > 0 ? '+' : ''}${fmtNum(diff, 2)} h). ${why ? `Note: "${why}". Please check this is right.` : 'No note entered.'}`);
+    }
+  }
+  for (const x of noBmd.values()) add('warn', x.r, 'BMD hours missing', `No BMD value on ${x.days.length} day${x.days.length > 1 ? 's' : ''}: ${x.days.join(', ')}`);
+  // Days with hours worked but nothing assigned to a brand
+  for (const d of DAYS) {
+    if (d.n === 0 && d.worked > 0 && dueStatus(d.week) !== 'open') {
+      add('crit', {dept: d.dept, week: d.week, kw: kwOf(d.week), iso: d.iso, person: d.person, email: d.email}, 'Hours worked but nothing assigned', `${fmtH(d.worked)} worked on this day, none assigned to a brand.`);
+    }
+  }
+  const perDay = new Map();
+  for (const r of rows) { if (!r.emp || !r.iso) continue; const k = r.email + '|' + r.iso; if (!perDay.has(k)) perDay.set(k, []); perDay.get(k).push(r); }
+  for (const g of perDay.values()) { const h = sum(g.map(r => r.hours || 0)); if (h > 12) add('warn', g[0], 'More than 12 hours in one day', `${fmtH(h)} recorded. Please check.`); }
+  const order = {crit: 0, warn: 1, info: 2};
+  return iss.sort((a, b) => order[a.sev] - order[b.sev] || a.week.localeCompare(b.week) || a.iso.localeCompare(b.iso) || String(a.emp).localeCompare(String(b.emp)));
+}
+function issueKey(i) {
+  const s = [i.dept, i.week, i.iso, i.emp, i.msg, i.det].join('|'); let h = 5381;
+  for (let k = 0; k < s.length; k++) h = ((h << 5) + h + s.charCodeAt(k)) >>> 0;
+  return 'i' + h.toString(36);
+}
+function issueMailLink(i, to) {
+  const e = peopleList().find(x => x.email.toLowerCase() === String(i.email || '').toLowerCase()) || {name: i.emp};
+  const when = `week ${i.kw}${i.iso ? `, ${fmtDate(new Date(i.iso))}` : ''}`;
+  const body = `Hi${firstName(e) ? ' ' + firstName(e) : ''},\n\nwhile checking the hours report I noticed something in your entries (${when}):\n\n${i.msg}\n${i.det}\n\nCould you please check this and correct it in Brand Time? If everything is right, just let me know.\n${REPORT_URL()}\n\nThanks!`;
+  return outlookLink(to, `Question about your hours, ${when}`, body);
+}
+
+/* ---------- frame: tabs, rendering ---------- */
+const ICON = {
+  crit: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4v5M8 11.5v.5" stroke="var(--bg)" stroke-width="2" stroke-linecap="round"/></svg>',
+  warn: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="currentColor"/><path d="M8 6v4M8 12v.3" stroke="var(--bg)" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  info: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 7v4.5M8 4.5v.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  ok: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="m4.8 8.3 2.2 2.2 4.2-4.6" fill="none" stroke="var(--bg)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+const SEV = {crit: 'Error', warn: 'Check', info: 'Note'};
+const pill = (sev, text) => `<span class="pill ${sev}">${ICON[sev] || ''}${esc(text || SEV[sev])}</span>`;
+
+function renderFiles() {
+  const all = peopleList(); const due = lastDueWeek();
+  const cards = deptsAll().map(dept => {
+    const members = all.filter(e => e.dept === dept);
+    const emails = new Set(members.map(e => e.email.toLowerCase()));
+    const subs = S.weeksRaw.filter(w => emails.has(String(w.email || '').toLowerCase()) && w.doc && w.doc.submitted && w.doc.submittedAt)
+      .sort((a, b) => String(a.doc.submittedAt).localeCompare(String(b.doc.submittedAt)));
+    const lastSub = subs[subs.length - 1];
+    if (!members.length && !lastSub) return '';
+    const who = lastSub ? `Last: ${esc(personName(lastSub.email))}, ${esc(fmtTime(lastSub.doc.submittedAt))}` : 'Nothing submitted yet';
+    let stat = '';
+    if (due) {
+      const sts = members.filter(e => e.required).map(e => empStatus(e, due)).filter(s => s.s !== 'inactive');
+      const miss = sts.filter(s => s.s === 'late').length, today = sts.filter(s => s.s === 'due').length, lateOk = sts.filter(s => s.s === 'ok' && s.late).length;
+      if (sts.length) stat = miss ? pill('crit', `Week ${kwOf(due)} missing · ${miss} of ${sts.length}`) : today ? pill('warn', `Week ${kwOf(due)} due today`) : lateOk ? pill('warn', `Week ${kwOf(due)} reported, partly late`) : pill('ok', `Week ${kwOf(due)} reported`);
+    }
+    return `<div class="file${lastSub ? ' on' : ''}"><span class="dept"><span class="dot"></span>${esc(dept)}</span><span class="who">${who}</span>${stat ? `<span class="st">${stat}</span>` : ''}</div>`;
+  }).filter(Boolean).join('') || `<div class="file"><span class="dept"><span class="dot"></span>No teams yet</span><span class="who">Nothing submitted yet</span></div>`;
+  document.getElementById('files').innerHTML = `<div class="section-head" style="margin-bottom:10px"><h3>Latest submissions by department</h3></div><div class="files">${cards}</div>`;
+  document.getElementById('banner').innerHTML = '';
+  renderMenu();
+}
+/* "More" menu: rarely used functions, to keep the header calm */
+function renderMenu() {
+  const it = (attrs, title, sub) => `<button class="mi" ${attrs}>${title}${sub ? `<small>${sub}</small>` : ''}</button>`;
+  document.getElementById('moreMenu').innerHTML = [
+    it('data-action="export"', 'Report as Excel', 'Overview, months, review and data of the selected period'),
+    it('data-action="export-brands"', 'All brands as separate Excel sheets', 'One sheet per brand with hours by department, week, person and tasks'),
+    '<hr>',
+    it('data-action="reload"', 'Refresh data', 'Reload the latest entries from Brand Time')
+  ].join('');
+}
+function renderPeriodBar() {
+  const modes = [['week', 'Week'], ['month', 'Month'], ['all', 'All']];
+  document.getElementById('modeSeg').innerHTML = modes.map(([k, l]) => `<button data-mode="${k}" aria-pressed="${S.mode === k}">${l}</button>`).join('');
+  const sel = document.getElementById('periodSel');
+  if (S.mode === 'week') sel.innerHTML = WEEKS.map(w => `<option value="${w}" ${w === S.period ? 'selected' : ''}>${weekLabel(w)}</option>`).join('');
+  else if (S.mode === 'month') sel.innerHTML = monthOptions().map(m => `<option value="${m}" ${m === S.period ? 'selected' : ''}>${monthLabel(m)}</option>`).join('');
+  else sel.innerHTML = `<option value="all">All weeks with data</option>`;
+  sel.disabled = S.mode === 'all';
+  const rows = periodRows(S.mode, S.period);
+  document.getElementById('periodInfo').textContent = S.mode === 'month'
+    ? `Month by date. Weeks spanning two months are split. ${rows.length} entries.`
+    : `${rows.length} entries in the period.`;
+}
+function renderTabs() {
+  const all = findIssues();
+  ISSUES = all.filter(i => !S.acks[issueKey(i)]); ISSUES_ACKED = all.filter(i => S.acks[issueKey(i)]);
+  const crit = ISSUES.filter(i => i.sev === 'crit').length, warn = ISSUES.filter(i => i.sev === 'warn').length;
+  const late = empMissing(peopleList(), WEEKS).reduce((n, x) => n + x.kws.length, 0);
+  const badge = crit + late ? `<span class="count crit">${crit + late}</span>` : warn ? `<span class="count">${warn}</span>` : '';
+  const tabs = [['overview', 'Overview'], ['investor', 'Investor report'], ['brand', 'By brand'], ['review', 'Review', badge], ['data', 'Data'], ['settings', 'Settings']];
+  document.getElementById('tabs').innerHTML = tabs.map(([k, l, b]) => `<button class="tab" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${b || ''}</button>`).join('');
+}
+function render() {
+  const m = document.getElementById('main');
+  const chrome = ['files', 'banner', 'navrow', 'exportBtn'];
+  if (!S.ready) {
+    for (const id of chrome) document.getElementById(id).hidden = true;
+    m.innerHTML = `<div class="loading">${esc(S.error || 'Loading the report …')}</div>`; return;
+  }
+  for (const id of ['navrow', 'exportBtn']) document.getElementById(id).hidden = false;
+  document.getElementById('files').hidden = false;
+  rebuild(); DOCMAP = new Map(S.weeksRaw.map(w => [String(w.email || '').toLowerCase() + '|' + w.week, w.doc]));
+  if (!S.period || (S.mode === 'week' && !WEEKS.includes(S.period))) S.period = defaultPeriod();
+  renderFiles(); renderPeriodBar(); renderTabs();
+  if (S.tab !== 'review') document.getElementById('files').hidden = true;
+  m.innerHTML = ({review: viewCheck, overview: viewOverview, investor: viewInvestor, brand: viewBrand, data: viewData, settings: viewSettings}[S.tab] || viewOverview)();
+  if (S.tab === 'data') renderDataTable();
+}
+
+/* ---------- building blocks ---------- */
+function kpi(label, value, sub, hero) { return `<div class="kpi${hero ? ' hero' : ''}"><span class="label">${esc(label)}</span><span class="v">${value}</span>${sub ? `<span class="s">${sub}</span>` : ''}</div>`; }
+function groupBars(list) {
+  if (!list.length) return `<div class="empty">No hours in the selected period.</div>`;
+  const G = groupsOf(list, true);
+  const max = Math.max(1, ...G.map(g => g.total)); const tot = sum(G.map(g => g.total));
+  const bar = (x, red, grey) => `<span class="track">${x.direct > 0 ? `<span class="${red ? 'seg-r' : grey ? 'seg-u' : 'seg-d'}" style="width:${x.direct / max * 100}%"></span>` : ''}${x.alloc > 0.05 ? `<span class="${red ? 'seg-ru' : 'seg-u'}" style="width:${x.alloc / max * 100}%"></span>` : ''}</span>`;
+  const keep = S.settings.method === 'none';
+  const tipOf = (n, x) => keep ? `${n}\n${fmtH(x.total)}${tot ? ` (${fmtPct(x.total / tot)})` : ''}` : `${n}\nDirect: ${fmtH(x.direct)}\nAllocated: ${fmtH(x.alloc)}\nTotal: ${fmtH(x.total)}${tot ? ` (${fmtPct(x.total / tot)})` : ''}`;
+  const legend = keep
+    ? `<span><i style="background:var(--red)"></i>Reploid</span><span><i style="background:var(--ink)"></i>Diverse brands</span><span><i style="background:var(--ink-3)"></i>General (no brand)</span>`
+    : `<span><i style="background:var(--ink)"></i>Booked directly</span><span><i style="background:var(--ink-3)"></i>Share of General (allocated)</span><span><i style="background:var(--red)"></i>Reploid</span>`;
+  return `<div class="legend">${legend}</div>
+  <div class="hbars">${G.map(g => {
+    const red = g.group === 'Reploid'; const grey = g.group === 'Allgemein'; const open = expandable(g) && S.open[g.group];
+    let h = `<div class="hbar group ${red ? 'reploid' : ''}" data-tip="${esc(tipOf(g.label, g))}"><span class="n">${groupName(g)}</span>${bar(g, red, grey)}<span class="v">${fmtNum(g.total)} <small>${tot ? fmtPct(g.total / tot) : ''}</small></span></div>`;
+    if (open) h += g.items.map(x => `<div class="hbar sub" data-tip="${esc(tipOf(x.brand, x))}"><span class="n">${esc(x.brand)}</span>${bar(x, red)}<span class="v">${fmtNum(x.total)} <small>${tot ? fmtPct(x.total / tot) : ''}</small></span></div>`).join('');
+    return h;
+  }).join('')}</div>${G.find(g => g.group === 'Reploid' && !g.total) ? '<p class="note">No hours are recorded for Reploid in this period. Book hours on the brand "REPLOID" in Brand Time.</p>' : ''}`;
+}
+function weekColumns(valueOf, isSel, title) {
+  const ks = Array.from(new Set(ROWS.filter(counts).map(r => r.week))).sort();
+  if (!ks.length) return '';
+  const weeks = weekRange(ks[0], ks[ks.length - 1]);
+  const vals = weeks.map(valueOf); const max = Math.max(...vals, 1);
+  const maxIdx = vals.indexOf(Math.max(...vals));
+  return `<div class="section"><div class="section-head"><h3>${esc(title)}</h3><span class="muted" style="font-size:.85rem">Red = selected period</span></div>
+  <div><div class="cols">${weeks.map((w, i) => {
+    const h = vals[i] / max * 100; const showT = isSel(w) || i === maxIdx;
+    return `<div class="col ${isSel(w) ? 'sel' : ''}" data-tip="${esc(`Week ${kwOf(w)}\n${fmtH(vals[i])}`)}">${showT ? `<span class="t" style="bottom:calc(${h}% + 4px)">${fmtNum(vals[i], 0)}</span>` : ''}<span class="b" style="height:${h}%"></span></div>`;
+  }).join('')}</div><div class="col-labels">${weeks.map(w => `<span>W${kwOf(w)}</span>`).join('')}</div></div></div>`;
+}
+const selWeek = w => S.mode === 'all' || (S.mode === 'week' ? w === S.period : ROWS.some(r => counts(r) && r.week === w && r.month === S.period));
+function brandTable(res, weeks) {
+  const ds = deptsAll().filter(d => res.list.some(x => x.byDept[d]));
+  const rates = hasRates();
+  const tot = res.list.reduce((a, x) => a + x.total, 0);
+  const um = S.settings.method !== 'none'; // Direct/Allocated columns only when General is allocated
+  const colSum = d => sum(res.list.map(x => x.byDept[d] || 0));
+  const cell = (h, d) => h ? `<td class="r">${fmtNum(h)}<br><small class="muted">${fmtPct(h / (colSum(d) || 1))}</small></td>` : '<td class="r">–</td>';
+  const rowOf = (x, cls, label) => `<tr class="${cls}"><td>${label}</td>${ds.map(d => cell(x.byDept[d], d)).join('')}${um ? `<td class="r">${fmtNum(x.direct)}</td><td class="r">${fmtNum(x.alloc)}</td>` : ''}<td class="r"><b>${fmtNum(x.total)}</b></td><td class="r">${tot ? fmtPct(x.total / tot) : '–'}</td>${rates ? `<td class="r">${fmtEur(costOf(x.byDept))}</td>` : ''}</tr>`;
+  const rowsH = res.list.length ? groupsOf(res.list, true).map(g => {
+    let h = rowOf(g, 'grp' + (g.group === 'Reploid' ? ' reploid' : ''), groupName(g));
+    if (expandable(g) && S.open[g.group]) h += g.items.map(x => rowOf(x, 'sub', esc(x.brand))).join('');
+    return h;
+  }).join('') : '';
+  const totalRow = `<tr class="total"><td>Total</td>${ds.map(d => `<td class="r">${fmtNum(colSum(d))}<br><small class="muted">${tot ? fmtPct(colSum(d) / tot) + ' of all' : ''}</small></td>`).join('')}${um ? `<td class="r">${fmtNum(sum(res.list.map(x => x.direct)))}</td><td class="r">${fmtNum(sum(res.list.map(x => x.alloc)))}</td>` : ''}<td class="r">${fmtNum(tot)}</td><td class="r">${tot ? '100 %' : '–'}</td>${rates ? `<td class="r">${fmtEur(sum(res.list.map(x => costOf(x.byDept))))}</td>` : ''}</tr>`;
+  return `<div class="tbl-wrap"><table><thead><tr><th></th>${ds.map(d => `<th class="r">${esc(d)}</th>`).join('')}${um ? '<th class="r">Direct</th><th class="r">Allocated</th>' : ''}<th class="r">Total h</th><th class="r">Share</th>${rates ? '<th class="r">Cost</th>' : ''}</tr></thead><tbody>${rowsH || `<tr><td colspan="9" class="empty">No hours in the period.</td></tr>`}${rowsH ? totalRow : ''}</tbody></table></div>
+  <p class="note">Hours per department, with the share of that department's hours underneath. Example: "General" in Operations at 90 % means 90 % of Operations hours had no direct brand link.${um ? ' Including allocated general hours.' : ''}${res.unallocated ? ` ${fmtH(res.unallocated)} could not be allocated because no brand had any directly booked hours.` : ''}</p>`;
+}
+function topTopics(rows, n = 3) {
+  const m = new Map();
+  for (const r of rows) { if (!r.topic) continue; const k = r.topic.toLowerCase(); const e = m.get(k) || {t: r.topic, h: 0}; e.h += r.hours; m.set(k, e); }
+  return Array.from(m.values()).sort((a, b) => b.h - a.h).slice(0, n);
+}
+function uncountedHours() {
+  if (S.settings.includeDrafts) return 0;
+  let h = 0;
+  for (const rec of S.weeksRaw) {
+    if (!rec.doc || rec.doc.submitted) continue;
+    for (const [iso, d] of Object.entries(rec.doc.days || {})) {
+      const inP = S.mode === 'all' || (S.mode === 'week' ? rec.week === S.period : iso.slice(0, 7) === S.period);
+      if (inP) h += sum((d.rows || []).map(r => +r.h || 0));
+    }
+  }
+  return h;
+}
+
+/* ---------- views ---------- */
+function viewOverview() {
+  const rows = periodRows(S.mode, S.period); const res = allocate(rows);
+  const weeks = weeksIn(S.mode, S.period, rows);
+  const emps = new Set(rows.map(r => r.person)).size;
+  const reH = sum(rows.filter(r => r.reassigned).map(r => r.hours));
+  const rates = hasRates();
+  const G = groupsOf(res.list, true); const gR = G[0], gD = G[1]; const gT = sum(G.map(g => g.total));
+  const k = [
+    kpi('Total hours', fmtNum(res.total), `${emps} ${emps === 1 ? 'person' : 'people'}`),
+    kpi('Reploid', fmtNum(gR.total), gT ? `${fmtPct(gR.total / gT)} of hours` : '–', true),
+    kpi('Diverse brands', fmtNum(gD.total), `${gD.items.length} brands · ${gT ? fmtPct(gD.total / gT) : '–'}`)
+  ];
+  const gA = G.find(g => g.group === 'Allgemein') || {total: 0};
+  if (S.settings.method === 'none' || gA.total) k.push(kpi('General (no brand)', fmtNum(gA.total), `${gT ? fmtPct(gA.total / gT) : '–'} · organisation, meetings etc.`));
+  if (rates) k.push(kpi('Cost', fmtEur(sum(res.list.map(x => costOf(x.byDept)))), 'at internal hourly rates'));
+  // Point to open items instead of spreading the review across this page
+  const openW = empMissing(peopleList(), WEEKS).reduce((n, x) => n + x.kws.length, 0);
+  const crit = ISSUES.filter(i => i.sev === 'crit').length;
+  const attention = (openW || crit) ? `<button class="banner" data-tab="review" style="border:0;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit"><span>${openW ? `<b>${openW} weekly ${openW > 1 ? 'submissions are' : 'submission is'} missing</b>` : ''}${openW && crit ? ' · ' : ''}${crit ? `<b>${crit} ${crit > 1 ? 'errors' : 'error'} in the data</b>` : ''}</span><span class="muted">Go to Review →</span></button>` : '';
+  const unc = uncountedHours();
+  const uncStrip = unc > 0.05 ? `<div class="strip"><b>Not yet counted</b><span>${fmtH(unc)} entered in weeks that are not submitted yet. They count once submitted, or switch on "Include weeks not yet submitted" under Settings.</span><button class="lnk" data-tab="settings">Settings</button></div>` : '';
+  const note = `<p class="note">${esc(cap1(periodName()))}. ${S.settings.method === 'none' ? 'General hours are shown as their own item (allocating them can be set under Settings).' : `${fmtPct(res.total ? res.genTotal / res.total : 0)} of the hours had no direct brand link and are allocated to the brands ${esc(methodLabel().replace('General ', '').replace('allocated ', ''))}.`}${reH > 0 ? ` ${fmtH(reH)} booked as General were assigned to brands automatically because the note names the brand (see Review).` : ''}</p>`;
+  return `${attention}${uncStrip}<div class="kpis">${k.join('')}</div>${note}
+  <div class="two">
+    <div class="section"><div class="section-head"><h2>Reploid and diverse brands</h2><span class="muted" style="font-size:.85rem">${esc(methodLabel())}</span></div>${groupBars(res.list)}</div>
+    ${weekColumns(w => sum(ROWS.filter(r => counts(r) && r.week === w).map(r => r.hours)), selWeek, 'Hours per calendar week')}
+  </div>
+  <div class="section"><div class="section-head"><h2>By department</h2><button class="btn small" data-action="copy-table" data-target="brandTbl">Copy table</button></div><div id="brandTbl">${brandTable(res, weeks)}</div></div>`;
+}
+
+function investorText(mode, p) {
+  const rows = periodRows(mode, p); const res = allocate(rows);
+  const list = res.list.filter(x => inInvestor(x.brand)); const tot = sum(list.map(x => x.total));
+  if (!tot) return 'There are no hours for this period yet.';
+  const [R, D] = groupsOf(list, false);
+  const join = a => a.length > 1 ? a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1] : (a[0] || '');
+  let t = `${cap1(periodName(mode, p))} the Alimentastic team logged ${fmtNum(tot, 0)} hours. `;
+  if (R.total) {
+    t += `${fmtNum(R.total, 0)} hours were spent on Reploid, which is ${fmtPct(R.total / tot)} of the time. `;
+    if (R.items.length > 1) t += `Of these, ${join(R.items.map(x => `${fmtNum(x.total, 0)} h went to ${x.brand}`))}. `;
+    const rd = Object.entries(R.byDept).sort((a, b) => b[1] - a[1]).map(([d, h]) => `${d} ${fmtNum(h, 0)} h`);
+    t += `Involved: ${join(rd)}. `;
+    const tt = topTopics(rows.filter(r => groupOf(r.brand) === 'Reploid'), 2).map(e => e.t);
+    if (tt.length) t += `Main areas for Reploid: ${tt.join('; ')}. `;
+  } else t += 'No hours were booked directly on Reploid in this period. ';
+  if (D.total) t += `Diverse other brands accounted for ${fmtNum(D.total, 0)} hours (${fmtPct(D.total / tot)}), mainly ${join(D.items.slice(0, 3).map(x => `${x.brand} (${fmtNum(x.total, 0)} h)`))}. `;
+  const A = groupsOf(list, false).find(g => g.group === 'Allgemein');
+  if (A && A.total) t += `${fmtNum(A.total, 0)} hours (${fmtPct(A.total / tot)}) were cross-cutting activities without a direct brand link, such as organisation, internal meetings and trade shows for all brands. `;
+  else if (res.genTotal) t += `${fmtPct(res.genTotal / res.total)} of the hours were cross-cutting activities without a direct brand link and have been distributed according to the hours key. `;
+  if (hasRates()) t += `Valued at the internal hourly rates, this corresponds to ${fmtEur(costOf(R.byDept))} for Reploid and ${fmtEur(costOf(D.byDept))} for the diverse brands.`;
+  return t.trim().replace(/\.\.(?=\s|$)/g, '.');
+}
+function viewInvestor() {
+  const rows = periodRows(S.mode, S.period); const res = allocate(rows);
+  const list = res.list.filter(x => inInvestor(x.brand)); const tot = sum(list.map(x => x.total));
+  const rates = hasRates();
+  const [R, D] = groupsOf(list, false);
+  const months = Array.from(new Set(ROWS.filter(counts).map(r => r.month))).sort();
+  const mres = months.map(m => ({m, G: groupsOf(allocate(periodRows('month', m)).list.filter(y => inInvestor(y.brand)), false)}));
+  const gOf = (mr, g) => mr.G.find(z => z.group === g) || {total: 0, items: [], byDept: {}};
+  const itemsOf = g => { const n = new Map(); for (const mr of mres) for (const x of gOf(mr, g).items) n.set(x.brand, (n.get(x.brand) || 0) + x.total); return Array.from(n.entries()).sort((a, b) => b[1] - a[1]).map(e => e[0]); };
+  const gv = (mr, g) => gOf(mr, g).total;
+  const bv = (mr, g, b) => (gOf(mr, g).items.find(y => y.brand === b) || {}).total || 0;
+  const GS = ['Reploid', 'Diverse', 'Allgemein'];
+  const mTot = mr => sum(GS.map(g => gv(mr, g)));
+  const cells = (f, cls) => mres.map(mr => `<td class="r ${cls || ''}">${f(mr)}</td>`).join('');
+  const nz = v => v ? fmtNum(v) : '–';
+  const groupRows = GS.filter(g => g !== 'Allgemein' || mres.some(mr => gv(mr, g))).map(g => {
+    const its = itemsOf(g); const pseudo = {group: g, label: GROUP_LABEL[g], items: its.map(b => ({brand: b}))};
+    let h = `<tr class="grp${g === 'Reploid' ? ' reploid' : ''}"><td>${groupName(pseudo)}</td>${cells(mr => nz(gv(mr, g)))}<td class="r">${fmtNum(sum(mres.map(mr => gv(mr, g))))}</td></tr>`;
+    if (expandable(pseudo) && S.open[g]) h += its.map(b => `<tr class="sub"><td>${esc(b)}</td>${cells(mr => nz(bv(mr, g, b)))}<td class="r">${fmtNum(sum(mres.map(mr => bv(mr, g, b))))}</td></tr>`).join('');
+    return h;
+  }).join('');
+  const allT = sum(mres.map(mTot));
+  const mTable = months.length ? `<div class="tbl-wrap"><table><thead><tr><th>Hours</th>${months.map(m => `<th class="r">${monthLabel(m)}</th>`).join('')}<th class="r">Total</th></tr></thead><tbody>
+    ${groupRows}
+    <tr class="total"><td>Total</td>${cells(mr => fmtNum(mTot(mr)))}<td class="r">${fmtNum(allT)}</td></tr>
+    ${GS.filter(g => g !== 'Allgemein' || mres.some(mr => gv(mr, g))).map(g => { const all = sum(mres.map(mr => gv(mr, g))); return `<tr><td class="muted">Share ${g === 'Diverse' ? 'diverse brands' : g === 'Allgemein' ? 'General' : g}</td>${cells(mr => mTot(mr) ? fmtPct(gv(mr, g) / mTot(mr)) : '–', 'muted')}<td class="r muted">${allT ? fmtPct(all / allT) : '–'}</td></tr>`; }).join('')}
+    ${rates ? `<tr><td class="muted">Cost Reploid</td>${cells(mr => fmtEur(costOf(gOf(mr, 'Reploid').byDept)), 'muted')}<td class="r muted">${fmtEur(sum(mres.map(mr => costOf(gOf(mr, 'Reploid').byDept))))}</td></tr>
+    <tr><td class="muted">Cost total</td>${cells(mr => fmtEur(sum(GS.map(g => costOf(gOf(mr, g).byDept)))), 'muted')}<td class="r muted">${fmtEur(sum(mres.map(mr => sum(GS.map(g => costOf(gOf(mr, g).byDept))))))}</td></tr>` : ''}
+  </tbody></table></div><p class="note">Months by the date of the entries. A month is only complete once all weeks are submitted (see Review). "Diverse brands" can be expanded.</p>` : `<div class="empty">No data yet.</div>`;
+  const ds = Array.from(new Set([...Object.keys(R.byDept), ...Object.keys(D.byDept)]));
+  const dTot = d => (R.byDept[d] || 0) + (D.byDept[d] || 0);
+  const dmax = Math.max(1, ...ds.map(dTot));
+  const deptBars = ds.sort((a, b) => dTot(b) - dTot(a)).map(d => `<div class="hbar" data-tip="${esc(`${d}\nReploid: ${fmtH(R.byDept[d] || 0)}\nDiverse brands: ${fmtH(D.byDept[d] || 0)}`)}"><span class="n">${esc(d)}</span><span class="track">${R.byDept[d] ? `<span class="seg-r" style="width:${R.byDept[d] / dmax * 100}%"></span>` : ''}${D.byDept[d] ? `<span class="seg-d" style="width:${D.byDept[d] / dmax * 100}%"></span>` : ''}</span><span class="v">${fmtNum(dTot(d))} <small>h</small></span></div>`).join('');
+  const focus = [...R.items, ...D.items.slice(0, 6)].map(x => {
+    const t = topTopics(rows.filter(r => r.brand === x.brand));
+    const red = groupOf(x.brand) === 'Reploid';
+    return `<tr${red ? ' class="grp reploid"' : ''}><td><b>${esc(x.brand)}</b></td><td class="r">${fmtNum(x.total)}</td><td class="wrap-text" style="font-weight:400">${t.map(e => `${esc(e.t)} <span class="muted">(${fmtNum(e.h, 1)} h)</span>`).join('<br>') || '–'}</td></tr>`;
+  }).join('');
+  const pR = tot ? R.total / tot : 0;
+  const k = [kpi('Reploid', fmtNum(R.total), `${fmtPct(pR)} of hours`, true), kpi('Diverse brands', fmtNum(D.total), `${D.items.length} brands · ${tot ? fmtPct(D.total / tot) : '–'}`), kpi('Total hours', fmtNum(tot), periodCore())];
+  if (rates) k.push(kpi('Cost Reploid', fmtEur(costOf(R.byDept)), `total ${fmtEur(costOf(R.byDept) + costOf(D.byDept))}`));
+  const A = groupsOf(list, false).find(g => g.group === 'Allgemein') || {total: 0};
+  const part = (cls, name, h) => { const p = h / tot; return h ? `<span class="${cls}" style="flex:${h} 1 0" data-tip="${esc(`${name}\n${fmtH(h)} (${fmtPct(p)})`)}">${p >= 0.12 ? `${name} ${fmtPct(p)}` : ''}</span>` : ''; };
+  const split = tot ? `<div class="split" role="img" aria-label="Reploid ${fmtPct(R.total / tot)}, diverse brands ${fmtPct(D.total / tot)}${A.total ? `, General ${fmtPct(A.total / tot)}` : ''}">${part('r', 'Reploid', R.total)}${part('d', 'Diverse brands', D.total)}${part('a', 'General', A.total)}</div>` : '';
+  if (A.total || S.settings.method === 'none') k.splice(2, 0, kpi('General (no brand)', fmtNum(A.total), tot ? `${fmtPct(A.total / tot)} of hours` : '–'));
+  return `<div class="story"><span class="label">Summary ${esc(periodCore())}</span><p id="invText">${esc(investorText(S.mode, S.period))}</p><div class="story-actions"><button class="btn small" data-action="copy" data-target="invText">Copy text</button><button class="btn small" data-action="export-investor">Investor report as Excel</button></div></div>
+  <div class="kpis">${k.join('')}</div>
+  ${split}
+  <div class="section"><div class="section-head"><h2>Reploid and diverse brands per month</h2><button class="btn small" data-action="copy-table" data-target="invTbl">Copy table</button></div><div id="invTbl">${mTable}</div></div>
+  <div class="two">
+    <div class="section"><h2>Focus in the period</h2>${focus ? `<div class="tbl-wrap"><table><thead><tr><th>Brand / project</th><th class="r">Hours</th><th>Main activities</th></tr></thead><tbody>${focus}</tbody></table></div>` : '<div class="empty">No data.</div>'}</div>
+    <div class="section"><h2>By department</h2><div class="legend"><span><i style="background:var(--red)"></i>Reploid</span><span><i style="background:var(--ink)"></i>Diverse brands</span></div>${deptBars ? `<div class="hbars">${deptBars}</div>` : '<div class="empty">No data.</div>'}<p class="note">Which brands belong to Reploid, to the diverse brands, or not in the report at all can be set under Settings.</p></div>
+  </div>`;
+}
+
+const ALLG_ALL = '__General';
+const selMatch = b => b === ALLG_ALL ? (r => r.isAllg) : (r => r.brand === b);
+const selName = b => b === ALLG_ALL ? 'General (total)' : b;
+function brandText(b, rows, x) {
+  const name = selName(b);
+  if (!x) return `There are no hours for ${name} ${periodName()}.`;
+  const t = topTopics(rows.filter(selMatch(b)), 3).map(e => e.t);
+  let s = groupOf(b === ALLG_ALL ? 'Allgemein' : b) === 'Allgemein'
+    ? `${cap1(periodName())} ${fmtNum(x.total, 1)} hours were booked without a direct brand link${b === ALLG_ALL ? '' : ` (as "${name}")`}. `
+    : `${cap1(periodName())} Alimentastic spent ${fmtNum(x.total, 1)} hours on ${name}.${x.alloc > 0.05 ? ` Of these, ${fmtNum(x.direct, 1)} hours were booked directly and ${fmtNum(x.alloc, 1)} hours are the share of cross-cutting activities.` : ''} `;
+  const ds = Object.entries(x.byDept).sort((a, c) => c[1] - a[1]).map(([d, h]) => `${d} ${fmtNum(h, 1)} h`).join(', ');
+  s += `Involved: ${ds}. `;
+  if (t.length) s += `Main areas: ${t.join('; ')}.`;
+  return s.trim().replace(/\.\.(?=\s|$)/g, '.');
+}
+function viewBrand() {
+  const rows = periodRows(S.mode, S.period); const res = allocate(rows);
+  const all = Array.from(new Set([...res.list.map(x => x.brand), ...Array.from(knownBrands().values())]));
+  const gA = groupsOf(res.list, true).find(g => g.group === 'Allgemein');
+  all.push(ALLG_ALL);
+  if (!S.brandSel || !all.includes(S.brandSel)) { const r0 = res.list.find(y => groupOf(y.brand) === 'Reploid') || res.list[0]; S.brandSel = r0 ? r0.brand : all[0]; }
+  const b = S.brandSel; const x = b === ALLG_ALL ? gA : res.list.find(y => y.brand === b);
+  const br = rows.filter(selMatch(b)).sort((a, c) => (a.iso || '').localeCompare(c.iso || '') || a.dept.localeCompare(c.dept));
+  const rates = hasRates();
+  const hide = S.settings.hideNames;
+  const um = x && x.alloc > 0.05;
+  const k = x ? (um
+    ? [kpi('Total hours', fmtNum(x.total), 'incl. share of General'), kpi('Booked directly', fmtNum(x.direct), `${br.length} entries`), kpi('Share of General', fmtNum(x.alloc), methodLabel().replace('General ', ''))]
+    : [kpi('Hours', fmtNum(x.total), `${br.length} entries`), kpi('People', String(new Set(br.map(r => r.person)).size), 'with entries')]) : [];
+  if (x && rates) k.push(kpi('Cost', fmtEur(costOf(x.byDept)), 'at internal hourly rates'));
+  const deptRows = x ? Object.entries(x.byDept).sort((a, c) => c[1] - a[1]).map(([d, h]) => `<tr><td>${esc(d)}</td><td class="r">${fmtNum(h)}</td><td class="r">${fmtPct(h / x.total)}</td></tr>`).join('') : '';
+  const act = br.map(r => `<tr><td class="num">${r.iso ? fmtDate(new Date(r.iso)) : '–'}</td><td>${esc(r.dept)}</td>${hide ? '' : `<td>${esc(r.person)}</td>`}<td class="r">${fmtNum(r.hours)}</td><td class="wrap-text">${esc(r.topic || '–')}</td></tr>`).join('');
+  const optGroups = ['Reploid', 'Diverse', 'Allgemein', 'aus'].map(g => { const ns = all.filter(n => n !== ALLG_ALL && groupOf(n) === g); const extra = g === 'Allgemein' ? `<option value="${ALLG_ALL}" ${b === ALLG_ALL ? 'selected' : ''}>General (total)</option>` : ''; return ns.length || extra ? `<optgroup label="${esc(GROUP_LABEL[g])}">${extra}${ns.map(n => `<option ${n === b ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : ''; }).join('');
+  return `<div class="inline"><label class="label" for="brandSel">Brand</label><select id="brandSel">${optGroups}</select>
+    <label class="inline" style="font-size:.9rem"><input type="checkbox" id="hideNames" ${hide ? 'checked' : ''}> Hide employee names</label></div>
+  <div class="story"><span class="label">Report for ${esc(selName(b))}</span><p id="brandText">${esc(brandText(b, rows, x))}</p><div class="story-actions"><button class="btn small" data-action="copy" data-target="brandText">Copy text</button><button class="btn small" data-action="export-brand">This brand as Excel</button><button class="btn small" data-action="export-brands">All brands separately</button></div></div>
+  ${k.length ? `<div class="kpis">${k.join('')}</div>` : ''}
+  <div class="two">
+    <div class="section"><h2>Activities</h2>${act ? `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Department</th>${hide ? '' : '<th>Employee</th>'}<th class="r">Hours</th><th>Task</th></tr></thead><tbody>${act}</tbody></table></div>` : '<div class="empty">No directly booked entries in the period.</div>'}</div>
+    <div class="section"><h2>By department</h2>${deptRows ? `<div class="tbl-wrap"><table><thead><tr><th>Department</th><th class="r">Hours</th><th class="r">Share</th></tr></thead><tbody>${deptRows}</tbody></table></div>` : '<div class="empty">No data.</div>'}
+    ${weekColumns(w => sum(ROWS.filter(r => counts(r) && r.week === w && selMatch(b)(r)).map(r => r.hours)), selWeek, 'Directly booked hours per week')}</div>
+  </div>`;
+}
+
+function viewData() {
+  return `<div class="section"><div class="section-head"><h2>All entries</h2><input type="text" id="q" placeholder="Search: name, brand, task, note …" value="${esc(S.q)}" style="width:min(340px,100%)"></div><div id="dataTbl"></div></div>`;
+}
+function renderDataTable() {
+  const q = S.q.toLowerCase();
+  const rows = ROWS.filter(r => inPeriod(r) && (!q || [r.dept, r.emp, r.person, r.brand, r.brandRaw, r.topic, r.note].join(' ').toLowerCase().includes(q)));
+  const shown = rows.slice(0, 600);
+  document.getElementById('dataTbl').innerHTML = rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Week</th><th>Department</th><th>Employee</th><th>Brand</th><th class="r">Hours</th><th>Task</th><th>Note</th><th class="r">BMD</th><th>Counted</th></tr></thead><tbody>${shown.map(r => `<tr><td class="num">${r.iso ? fmtDate(new Date(r.iso)) : '–'}</td><td class="r">${r.kw}</td><td>${esc(r.dept)}</td><td>${esc(r.person)}</td><td>${esc(r.brand || '–')}${r.reassigned ? ` <small class="muted">(booked as ${esc(r.fromBrand)})</small>` : ''}</td><td class="r">${fmtNum(r.hours, 2)}</td><td class="wrap-text">${esc(r.topic || '–')}</td><td class="wrap-text muted">${esc(r.note)}</td><td class="r">${r.bmd != null ? fmtNum(r.bmd, 2) : '–'}</td><td>${counts(r) ? 'yes' : 'no'}</td></tr>`).join('')}</tbody></table></div>${rows.length > shown.length ? `<p class="note">The first ${shown.length} of ${rows.length} entries are shown. Narrow down with the search or the period.</p>` : ''}`
+    : `<div class="empty">No entries in the period${q ? ' for this search' : ''}.</div>`;
+}
+
+/* ---------- review ---------- */
+function empGrid(list, weeks, only) {
+  const rows = [];
+  const menu = (e, w, cls, label, tip) => S.cellMenu === e.id + '|' + w
+    ? `<td><span class="cellmenu"><button class="btn small" data-action="exc-set" data-e="${esc(e.id)}" data-w="${w}" data-r="Vacation">Vacation</button><button class="btn small" data-action="exc-set" data-e="${esc(e.id)}" data-w="${w}" data-r="No reason given" title="No reason given">n/a</button></span></td>`
+    : `<td><button class="cell ${cls}" data-action="cell-menu" data-e="${esc(e.id)}" data-w="${w}" data-tip="${esc(tip)}">${label}</button></td>`;
+  const shown = list.filter(e => e.required && (!only || only.has(e.id)));
+  if (!shown.length) return `<div class="empty">Nobody has open weeks.</div>`;
+  let lastDept = null;
+  for (const e of shown) {
+    if (e.dept !== lastDept) { rows.push(`<tr class="grp"><td colspan="${weeks.length + 1}">${esc(e.dept || NO_TEAM)}</td></tr>`); lastDept = e.dept; }
+    const miss = weeks.filter(w => empStatus(e, w).s === 'late');
+    rows.push(`<tr><td><span class="namecell"><span>${esc(e.name)}</span>${miss.length ? remindLinks(e, miss) : ''}</span></td>${weeks.map(w => {
+      const st = empStatus(e, w);
+      if (st.s === 'ok' && st.h < 0.5) return `<td><span class="cell exc" data-tip="${esc(`${e.name}, week ${kwOf(w)}: excused\nSubmitted with no hours (leave or similar)`)}">excused</span></td>`;
+      if (st.s === 'ok') return `<td><span class="cell ${st.late ? 'lateok' : 'ok'}" data-tip="${esc(`${e.name}, week ${kwOf(w)}: ${fmtH(st.h)} submitted${st.at ? `\n${fmtTime(st.at)}` : ''}${st.late ? '\nsubmitted after the deadline' : ''}`)}">${fmtNum(st.h, 0)} h</span></td>`;
+      if (st.s === 'exc') return `<td><button class="cell exc" data-action="exc-clear" data-e="${esc(e.id)}" data-w="${w}" data-tip="${esc(`${e.name}, week ${kwOf(w)}: excused (${st.x.reason})${st.x.note ? '\n' + st.x.note : ''}\nClick to reset`)}">excused</button></td>`;
+      if (st.s === 'inactive') return `<td><span class="cell inactive" data-tip="${esc(`${e.name}: not employed in week ${kwOf(w)}`)}">·</span></td>`;
+      if (st.s === 'late') return menu(e, w, 'late', 'missing', `${e.name}, week ${kwOf(w)}: not submitted${st.draft ? `\n${fmtH(st.h)} entered but the week was not submitted` : ''}\nClick to mark`);
+      if (st.s === 'due') return menu(e, w, 'due', 'today', `${e.name}, week ${kwOf(w)}: due today\nClick to mark, e.g. for leave`);
+      return `<td><span class="cell open">–</span></td>`;
+    }).join('')}</tr>`);
+  }
+  return `<div class="tbl-wrap"><table class="grid-status"><thead><tr><th>Employee</th>${weeks.map(w => `<th class="r" style="text-align:center">W${kwOf(w)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+}
+function excEditor(list) {
+  if (!S.excEdit) return '';
+  const e = list.find(x => x.id === S.excEdit.e); if (!e) return '';
+  const w = S.excEdit.w; const cur = S.excuses[e.id + '|' + w];
+  const weekOpts = sel => WEEKS.map(k => `<option value="${k}" ${k === sel ? 'selected' : ''}>Week ${kwOf(k)}</option>`).join('');
+  return `<div class="panel" id="excPanel"><h3>Reason for ${esc(e.name)}</h3>
+    <div class="inline"><label class="inline">From <select id="excFrom">${weekOpts(w)}</select></label><label class="inline">to <select id="excTo">${weekOpts(w)}</select></label>
+    <select id="excReason" aria-label="Reason">${REASONS.map(r => `<option ${cur && cur.reason === r ? 'selected' : ''}>${r}</option>`).join('')}</select>
+    <input type="text" id="excNote" placeholder="Note (required for “Other”)" value="${esc(cur ? cur.note : '')}" style="width:min(320px,100%)"></div>
+    <div class="inline"><button class="btn primary" data-action="exc-save">Save</button>${cur ? '<button class="btn" data-action="exc-delete">Remove reason</button>' : ''}<button class="btn" data-action="exc-cancel">Cancel</button></div>
+    <p class="note">Weeks with a reason no longer count as "not submitted". For several weeks of leave, set "to" to the last week.</p></div>`;
+}
+function viewCheck() {
+  const list = peopleList(); const weeks = shownWeeks(list);
+  const em = empMissing(list, weeks);
+  const missCount = em.reduce((n, x) => n + x.kws.length, 0);
+  const empTable = em.length ? `<div class="tbl-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Missing</th><th class="r">Mark as done</th></tr></thead><tbody>${em.flatMap(x => x.kws.map(w => `<tr><td><b>${esc(x.e.name)}</b></td><td>${esc(x.e.dept)}</td><td class="num">Week ${kwOf(w)}</td><td class="r"><span class="inline" style="justify-content:flex-end"><button class="btn small" data-action="exc-set" data-e="${esc(x.e.id)}" data-w="${w}" data-r="Vacation">Vacation</button><button class="btn small" data-action="exc-set" data-e="${esc(x.e.id)}" data-w="${w}" data-r="No reason given">No reason</button><button class="btn small" data-action="exc-edit" data-e="${esc(x.e.id)}" data-w="${w}">Reason …</button></span></td></tr>`)).join('')}</tbody></table></div>` : '';
+  const missingBlock = `<div class="section"><div class="section-head"><h2>Submission status per employee</h2><span class="inline"><label class="inline" style="font-size:.88rem"><input type="checkbox" id="onlyMissing" ${S.onlyMissing ? 'checked' : ''}> Open only</label>${em.length ? remindAllLink(em) : ''}${em.length ? '<button class="btn small" data-action="copy-reminder">Copy list</button>' : ''}</span></div>
+    <div class="summary">${missCount ? pill('crit', `${missCount} ${missCount > 1 ? 'weeks are' : 'week is'} missing for ${em.length} ${em.length > 1 ? 'people' : 'person'}`) : pill('ok', 'All due weeks submitted or marked')}</div>
+    <p class="note">Click "missing" to excuse the week as vacation or without a reason (n/a). Excused weeks can be reset with a click. "Remind" next to a name opens a ready-made email in Outlook; it is only sent there. Weeks are due on the Monday after the week, end of day.</p>
+    ${excEditor(list)}
+    ${empGrid(list, weeks, S.onlyMissing ? new Set(em.map(x => x.e.id)) : null)}
+    ${missCount ? `<h3>Open weeks</h3>${empTable}` : ''}</div>`;
+  const c = s => ISSUES.filter(i => i.sev === s).length;
+  const actions = i => {
+    const k = issueKey(i); const to = i.email && i.email !== '(unknown)' ? i.email : '';
+    const mail = to ? `<a class="btn small" href="${esc(issueMailLink(i, to))}" target="_blank" rel="noopener" data-tip="${esc(`Open a question to ${to} in Outlook`)}">✉ Ask</a>` : '';
+    return `<span style="display:flex;flex-direction:column;gap:4px;align-items:stretch"><button class="btn small" data-action="ack" data-k="${esc(k)}">✓ All good</button>${mail}</span>`;
+  };
+  const head = '<thead><tr><th>Status</th><th>Department</th><th class="r">Week</th><th>Date</th><th>Employee</th><th>Issue</th><th>Details</th><th></th></tr></thead>';
+  const row = (i, done) => `<tr${done ? ' class="muted"' : ''}><td>${done ? pill('ok', 'Done') : pill(i.sev)}</td><td>${esc(i.dept)}</td><td class="r">${i.kw}</td><td class="num">${i.iso ? fmtDate(new Date(i.iso)) : '–'}</td><td>${esc(i.emp || '–')}</td><td><b>${esc(i.msg)}</b></td><td class="wrap-text muted">${esc(i.det)}</td><td class="r">${done ? `<button class="btn small" data-action="unack" data-k="${esc(issueKey(i))}">Undo</button>` : actions(i)}</td></tr>`;
+  const issueLine = `<div class="summary">${c('crit') ? pill('crit', `${c('crit')} ${c('crit') > 1 ? 'errors' : 'error'}`) : ''}${c('warn') ? pill('warn', `${c('warn')} to check`) : ''}${c('info') ? pill('info', `${c('info')} ${c('info') > 1 ? 'notes' : 'note'}`) : ''}${!c('crit') && !c('warn') ? pill('ok', 'No errors in the data') : ''}</div>`;
+  const list2 = (ISSUES.length ? `<div class="tbl-wrap"><table>${head}<tbody>${ISSUES.map(i => row(i, false)).join('')}</tbody></table></div>` : `<div class="empty">No open findings.</div>`)
+    + (ISSUES_ACKED.length ? `<div><button class="btn small" data-action="toggle-acked">${S.showAcked ? 'Hide done' : `Show ${ISSUES_ACKED.length} marked as “all good”`}</button></div>${S.showAcked ? `<div class="tbl-wrap"><table>${head}<tbody>${ISSUES_ACKED.map(i => row(i, true)).join('')}</tbody></table></div>` : ''}` : '');
+  return `${missingBlock}
+  <div class="section"><div class="section-head"><h2>Findings in the data</h2><button class="btn small" data-action="copy-issues">Copy list for email</button></div>${issueLine}<p class="note">Clarify errors with the person concerned first. Rows with errors in brand or hours are not counted, all others are.</p>${list2}</div>`;
+}
+
+/* ---------- settings ---------- */
+function peopleSettings() {
+  const list = peopleList();
+  return `<div class="section"><div class="section-head"><h2>People</h2></div>
+    <p class="note">Basis for "who has not submitted". The list comes from the team addresses set up for Brand Time (the allowed emails). Nobody has to submit before their start date or after their leaving date. People who are not required to submit do not appear in the check. Names can be set here for the reports; without a name the email address is shortened (l.talbot becomes L. Talbot). <b>Team</b> is what each person chose when they signed up; choosing a team here overrides it, and also applies to people who have not signed up yet.</p>
+    ${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Team</th><th>Required to submit</th><th>Start date</th><th>Leaving date</th></tr></thead><tbody>${list.map((e, i) => `<tr><td><input type="text" data-pe="${esc(e.email)}" data-f="name" value="${esc((S.people[e.email] || {}).name || '')}" placeholder="${esc(prettyEmail(e.email))}" aria-label="Name" style="width:200px"></td><td class="muted">${esc(e.email)}</td><td><select data-pe="${esc(e.email)}" data-f="team" aria-label="Team"><option value="">${S.profileTeam[e.email.toLowerCase()] ? 'As chosen: ' + esc(S.profileTeam[e.email.toLowerCase()]) : 'Not chosen yet'}</option>${S.teams.map(t => `<option ${((S.people[e.email] || {}).team === t) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></td><td><input type="checkbox" data-pe="${esc(e.email)}" data-f="required" ${e.required ? 'checked' : ''} aria-label="Required to submit"></td><td><input type="date" data-pe="${esc(e.email)}" data-f="from" value="${esc(e.from)}" aria-label="Start date"></td><td><input type="date" data-pe="${esc(e.email)}" data-f="to" value="${esc(e.to)}" aria-label="Leaving date"></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty">No team addresses are set up yet.</div>'}</div>`;
+}
+function viewSettings() {
+  const reg = knownBrands();
+  // brand names that appear in the data but not in the brand list (e.g. a deleted brand) can be merged here too
+  for (const r of ROWS) { const nm = str(r.brandRaw); const k = bkey(nm); if (k && !reg.has(k)) reg.set(k, nm); }
+  const hoursBy = {}; for (const r of ROWS) if (r.hours > 0) { const k = bkey(r.brandRaw); hoursBy[k] = (hoursBy[k] || 0) + r.hours; }
+  const brands = Array.from(reg.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  const allNames = brands.map(([, n]) => n);
+  const st = S.settings;
+  const m = (v, t, d) => `<label class="radio"><input type="radio" name="method" value="${v}" ${st.method === v ? 'checked' : ''}><span><b>${t}</b><br><small class="muted">${d}</small></span></label>`;
+  const brandRows = brands.map(([k, name]) => {
+    const c = st.brands[k] || {}; const kind = brandKind(name);
+    const archived = CFG_BY_KEY[k] && CFG_BY_KEY[k].archived;
+    return `<tr><td>${esc(name)}${archived ? ' <span class="pill info">archived</span>' : ''}${hoursBy[k] ? `<br><small class="muted num">${fmtH(hoursBy[k])} in the data</small>` : ''}</td>
+      <td><select data-bset="kind" data-k="${k}" data-name="${esc(name)}" aria-label="Treatment of ${esc(name)}"><option value="marke" ${kind === 'marke' ? 'selected' : ''}>Own brand / project</option><option value="allgemein" ${kind === 'allgemein' ? 'selected' : ''}>Counts as General</option></select></td>
+      <td><select data-bset="alias" data-k="${k}" data-name="${esc(name)}" aria-label="Merge ${esc(name)} with"><option value="">–</option>${allNames.filter(n => n !== name).map(n => `<option ${c.alias === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></td>
+      <td>${kind === 'allgemein' ? '<span class="muted">General</span>' : `<select data-bset="group" data-k="${k}" data-name="${esc(name)}" aria-label="Group for ${esc(name)}">${['Reploid', 'Diverse', 'aus'].map(g => `<option value="${g}" ${groupOf(name) === g ? 'selected' : ''}>${{Reploid: 'Reploid', Diverse: 'Diverse brands', aus: 'Do not report'}[g]}</option>`).join('')}</select>`}</td>
+      <td><input type="number" class="short" min="0" step="0.1" data-bset="key" data-k="${k}" data-name="${esc(name)}" value="${c.key > 0 ? c.key : ''}" placeholder="–" aria-label="Fixed key for ${esc(name)}"></td></tr>`;
+  }).join('');
+  const keySum = sum(brands.map(([k]) => (st.brands[k] || {}).key || 0));
+  const weekOpts = WEEKS.map(w => `<option value="${w}" ${w === startWk() ? 'selected' : ''}>${weekLabel(w)}</option>`).join('');
+  return `<div class="settings">
+    <div class="section"><h2>Hours key for "General"</h2>
+      <label class="inline" style="align-items:flex-start;gap:8px"><input type="checkbox" id="autoAssign" ${st.autoAssign !== false ? 'checked' : ''} style="margin-top:4px"><span><b>Assign General to a brand automatically when the note names the brand</b><br><small class="muted">Example: General with the note "presentation for Reploid" counts for Reploid. If a row names several brands, the hours are split. Rows that were assigned are listed under Review.</small></span></label>
+      <div class="field">${m('none', 'Do not allocate', 'General hours (organisation, meetings, trade shows for all brands …) appear as their own item "General (no brand)" next to Reploid and diverse brands.')}
+      ${m('dept', 'Pro rata by department', 'General hours of a department are distributed in proportion to that department\'s directly booked hours.')}
+      ${m('all', 'Pro rata across all departments', 'All General hours are distributed in proportion to the directly booked hours of all departments.')}
+      ${m('fixed', 'Fixed key', 'Enter percentages per brand in the table below. They do not have to add up to 100, only the ratio counts.')}</div>
+    </div>
+    <div class="section"><h2>What counts, and cost</h2>
+      <div class="field"><label for="startWeek"><b>Track from week</b></label><span class="inline"><select id="startWeek">${weekOpts}</select></span><small>Earlier weeks are not flagged as "missing". Their hours still count and can still be selected.</small></div>
+      <div class="field"><label class="inline"><input type="checkbox" id="includeDrafts" ${st.includeDrafts ? 'checked' : ''}> Include weeks that are not submitted yet</label><small>Off: only submitted weeks count, so the reports show finished numbers.</small></div>
+      <div class="field"><b>Internal hourly rates per department</b><small>Optional. If filled in, all reports also show cost.</small>
+      ${deptsAll().map(d => `<span class="inline"><input type="number" class="short" min="0" step="1" data-rate="${esc(d)}" value="${st.rates[d] > 0 ? st.rates[d] : ''}" placeholder="–" aria-label="Hourly rate ${esc(d)}"> €/h · ${esc(d)}</span>`).join('')}</div>
+    </div>
+  </div>
+  ${peopleSettings()}
+  <div class="section"><div class="section-head"><h2>Brands</h2></div>
+    <p class="note">The reports show two main items: <b>Reploid</b> and <b>Diverse brands</b>. Brands that belong to Reploid can be set to "Reploid" here, and they then appear under Reploid. The brand list itself is managed in Brand Time under Brands. Brands that are internal categories (team, admin, recruiting …) count as General by default.</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Brand / project</th><th>Treatment</th><th>Merge with</th><th>Group in report</th><th>Fixed key %${st.method === 'fixed' ? ` (sum ${fmtNum(keySum, 1)})` : ''}</th></tr></thead><tbody>${brandRows}</tbody></table></div>
+    <p class="note">Settings apply to all admins.</p>
+  </div>`;
+}
+
+/* ---------- Excel exports (same look as the other Brand Time workbooks) ---------- */
+const XL = {
+  fill: {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FF1F1F1F'}},
+  head: {bold: true, color: {argb: 'FFFFFFFF'}, name: 'Arial', size: 11},
+  base: {name: 'Arial', size: 11}, bold: {name: 'Arial', size: 11, bold: true},
+  title: {bold: true, color: {argb: 'FFD6001C'}, name: 'Arial', size: 14}
+};
+function aoaSheet(wb, name, aoa, widths, headers, title) {
+  headers = headers || [];
+  const ws = wb.addWorksheet(name);
+  widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  aoa.forEach((row, ri) => {
+    const r = ws.addRow(row);
+    const first = String(row[0] == null ? '' : row[0]);
+    const strong = first === 'Total' || (/[A-Z]/.test(first) && first === first.toUpperCase() && first === first.trim() && first.length > 2);
+    r.eachCell({includeEmpty: false}, c => { c.font = strong ? XL.bold : XL.base; });
+    if (title && ri === 0) r.getCell(1).font = XL.title;
+    if (headers.includes(ri)) r.eachCell({includeEmpty: true}, (c, n) => { if (n <= widths.length) { c.fill = XL.fill; c.font = XL.head; } });
+  });
+  if (headers.length) ws.views = [{state: 'frozen', ySplit: headers[0] + 1}];
+  return ws;
+}
+function overviewAoa(mode, p, onlyInvestor) {
+  const rows = periodRows(mode, p); const res = allocate(rows);
+  const list = onlyInvestor ? res.list.filter(x => inInvestor(x.brand)) : res.list;
+  const ds = deptsAll().filter(d => list.some(x => x.byDept[d])); const rates = hasRates();
+  const tot = sum(list.map(x => x.total));
+  const head = ['Reploid / brand', ...ds, 'Direct', 'Allocated', 'Total h', 'Share %', ...(rates ? ['Cost €'] : [])];
+  const line = (name, x) => [name, ...ds.map(d => round2(x.byDept[d] || 0)), round2(x.direct), round2(x.alloc), round2(x.total), tot ? round2(x.total / tot * 100) : 0, ...(rates ? [Math.round(costOf(x.byDept))] : [])];
+  const body = [];
+  for (const g of groupsOf(list, !onlyInvestor)) {
+    body.push(line(g.label.toUpperCase(), g));
+    if (expandable(g)) for (const x of g.items) body.push(line('    ' + x.brand, x));
+  }
+  const totalRow = ['Total', ...ds.map(d => round2(sum(list.map(x => x.byDept[d] || 0)))), round2(sum(list.map(x => x.direct))), round2(sum(list.map(x => x.alloc))), round2(tot), 100, ...(rates ? [Math.round(sum(list.map(x => costOf(x.byDept))))] : [])];
+  return [[`Hours report ${periodName(mode, p).replace(/^(in|from) /, '')}`], [methodLabel()], [], head, ...body, totalRow];
+}
+function monthsAoa(onlyInvestor) {
+  const months = Array.from(new Set(ROWS.filter(counts).map(r => r.month))).sort();
+  const mres = months.map(m => { const l = allocate(periodRows('month', m)).list; return {m, G: groupsOf(onlyInvestor ? l.filter(y => inInvestor(y.brand)) : l, !onlyInvestor)}; });
+  const gs = onlyInvestor ? ['Reploid', 'Diverse', 'Allgemein'] : ['Reploid', 'Diverse', 'Allgemein', 'aus'];
+  const gOf = (mr, g) => mr.G.find(z => z.group === g) || {total: 0, items: [], byDept: {}};
+  const out = [['Hours', ...months.map(monthLabel), 'Total']];
+  for (const g of gs) {
+    const gT = mres.map(mr => gOf(mr, g).total); if (g === 'aus' && !sum(gT)) continue;
+    out.push([GROUP_LABEL[g].toUpperCase(), ...gT.map(round2), round2(sum(gT))]);
+    const names = Array.from(new Set(mres.flatMap(mr => gOf(mr, g).items.map(x => x.brand))));
+    if (expandable({group: g, items: names.map(b => ({brand: b}))})) for (const b of names) {
+      const v = mres.map(mr => (gOf(mr, g).items.find(x => x.brand === b) || {}).total || 0);
+      out.push(['    ' + b, ...v.map(round2), round2(sum(v))]);
+    }
+  }
+  const mt = mres.map(mr => sum(gs.map(g => gOf(mr, g).total)));
+  out.push(['Total', ...mt.map(round2), round2(sum(mt))]);
+  for (const g of ['Reploid', 'Diverse', 'Allgemein']) {
+    const v = mres.map(mr => gOf(mr, g).total); if (g === 'Allgemein' && !sum(v)) continue;
+    out.push([`Share ${g === 'Diverse' ? 'diverse brands' : g === 'Allgemein' ? 'General' : g} %`, ...mres.map((mr, i) => mt[i] ? round2(v[i] / mt[i] * 100) : 0), sum(mt) ? round2(sum(v) / sum(mt) * 100) : 0]);
+  }
+  if (hasRates()) {
+    out.push(['Cost Reploid €', ...mres.map(mr => Math.round(costOf(gOf(mr, 'Reploid').byDept)))]);
+    out.push(['Cost total €', ...mres.map(mr => Math.round(sum(gs.map(g => costOf(gOf(mr, g).byDept)))))]);
+  }
+  return out;
+}
+function dataAoa(rows, hideNames) {
+  return [['Date', 'Week', 'Department', ...(hideNames ? [] : ['Employee']), 'Brand', 'Hours', 'Task', ...(hideNames ? [] : ['Note', 'BMD', 'Counted'])],
+    ...rows.map(r => [r.iso ? fmtDate(new Date(r.iso)) : '', r.kw, r.dept, ...(hideNames ? [] : [r.person]), r.brand, round2(r.hours), r.topic, ...(hideNames ? [] : [r.note, r.bmd, counts(r) ? 'yes' : 'no'])])];
+}
+async function saveWorkbook(wb, filename) {
+  const buf = await wb.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buf], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+  toast('Saved: ' + filename);
+}
+const newWb = () => { if (!window.ExcelJS) { toast('The Excel library could not be loaded. Check the connection and reload the page.'); return null; } const wb = new ExcelJS.Workbook(); wb.creator = 'Brand Time'; wb.created = new Date(); return wb; };
+function exportAll() {
+  const wb = newWb(); if (!wb) return;
+  aoaSheet(wb, 'Brands', overviewAoa(S.mode, S.period), [22, 12, 12, 12, 12, 10, 10, 10, 9], [3], true);
+  aoaSheet(wb, 'Months', monthsAoa(false), [26, 14, 14, 14, 14, 14, 12], [0]);
+  aoaSheet(wb, 'Review', [['Status', 'Department', 'Week', 'Date', 'Employee', 'Issue', 'Details'], ...ISSUES.map(i => [SEV[i.sev], i.dept, i.kw, i.iso ? fmtDate(new Date(i.iso)) : '', i.emp, i.msg, i.det])], [9, 15, 7, 11, 20, 34, 70], [0]);
+  aoaSheet(wb, 'Data', dataAoa(ROWS.filter(r => inPeriod(r)), false), [11, 7, 15, 22, 22, 8, 18, 40, 7, 9], [0]);
+  saveWorkbook(wb, `Hours_report_${periodSlug()}.xlsx`);
+}
+function exportInvestor() {
+  const wb = newWb(); if (!wb) return;
+  aoaSheet(wb, 'Summary', [['Summary'], [investorText(S.mode, S.period)]], [120], [], true).getRow(2).getCell(1).alignment = {wrapText: true, vertical: 'top'};
+  aoaSheet(wb, 'Months', monthsAoa(true), [26, 14, 14, 14, 14, 14, 12], [0]);
+  aoaSheet(wb, 'Period by department', overviewAoa(S.mode, S.period, true), [22, 12, 12, 12, 12, 10, 10, 10, 9], [3], true);
+  saveWorkbook(wb, `Investor_report_${periodSlug()}.xlsx`);
+}
+/* One brand sheet: summary text, by department, by week, by person, then all activities */
+function brandAoa(b, rows, res) {
+  const x = b === ALLG_ALL ? groupsOf(res.list, true).find(g => g.group === 'Allgemein') : res.list.find(y => y.brand === b);
+  const br = rows.filter(r => counts(r) && selMatch(b)(r)).sort((a, c) => (a.iso || '').localeCompare(c.iso || '') || a.dept.localeCompare(c.dept));
+  const hide = S.settings.hideNames; const weeks = Array.from(new Set(rows.filter(counts).map(r => r.week))).sort();
+  const out = [[`${selName(b)}: hours ${periodCore()}`], [GROUP_LABEL[groupOf(b === ALLG_ALL ? 'Allgemein' : b)] || ''], [brandText(b, rows, x)], []];
+  const headers = [];
+  out.push(['Total hours', x ? round2(x.total) : 0]);
+  if (x && x.alloc > 0.05) out.push(['Of which direct', round2(x.direct)], ['Of which share of General', round2(x.alloc)]);
+  out.push([]); headers.push(out.length); out.push(['By department', 'Hours', 'Share %'], ...(x ? Object.entries(x.byDept).sort((a, c) => c[1] - a[1]).map(([d, h]) => [d, round2(h), x.total ? round2(h / x.total * 100) : 0]) : []));
+  out.push([]); headers.push(out.length); out.push(['By week', 'Hours'], ...weeks.map(w => [`Week ${kwOf(w)}`, round2(sum(br.filter(r => r.week === w).map(r => r.hours)))]));
+  if (!hide) {
+    const pp = {}; br.forEach(r => { pp[r.person] = (pp[r.person] || 0) + r.hours; });
+    out.push([]); headers.push(out.length); out.push(['By employee', 'Hours'], ...Object.entries(pp).sort((a, c) => c[1] - a[1]).map(([p, h]) => [p, round2(h)]));
+  }
+  out.push([], ['Activities']); headers.push(out.length);
+  out.push(['Date', 'Week', 'Department', ...(hide ? [] : ['Employee']), 'Hours', 'Task'],
+    ...br.map(r => [r.iso ? fmtDate(new Date(r.iso)) : '', r.kw, r.dept, ...(hide ? [] : [r.person]), round2(r.hours), r.topic]));
+  out.headers = headers;
+  return out;
+}
+const brandCols = () => S.settings.hideNames ? [24, 10, 15, 9, 40] : [24, 10, 15, 22, 9, 40];
+function exportBrand() {
+  const b = S.brandSel; const rows = periodRows(S.mode, S.period); const res = allocate(rows);
+  const wb = newWb(); if (!wb) return; const a = brandAoa(b, rows, res);
+  aoaSheet(wb, 'Brand report', a, brandCols(), a.headers, true);
+  saveWorkbook(wb, `Brand_report_${selName(b).replace(/[^\w-]+/g, '_')}_${periodSlug()}.xlsx`);
+}
+function exportAllBrands() {
+  const rows = periodRows(S.mode, S.period); const res = allocate(rows);
+  const wb = newWb(); if (!wb) return; const used = new Set();
+  const nameOf = s => { let n = s.replace(/[\[\]:*?\/\\]/g, ' ').trim().slice(0, 28) || 'Brand'; let k = n, i = 2; while (used.has(k.toLowerCase())) k = `${n.slice(0, 26)} ${i++}`; used.add(k.toLowerCase()); return k; };
+  aoaSheet(wb, nameOf('Overview'), overviewAoa(S.mode, S.period), [22, 12, 12, 12, 12, 10, 10, 10, 9], [3], true);
+  for (const g of groupsOf(res.list, true)) for (const x of g.items) {
+    if (!x.total) continue;
+    const a = brandAoa(x.brand, rows, res);
+    aoaSheet(wb, nameOf(x.brand), a, brandCols(), a.headers, true);
+  }
+  saveWorkbook(wb, `All_brands_separately_${periodSlug()}.xlsx`);
+}
+
+/* ---------- copy, notices ---------- */
+function toast(t) { const el = document.getElementById('toast'); el.textContent = t; el.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => el.hidden = true, 2600); }
+function copyText(t) {
+  const fallback = () => { const ta = document.createElement('textarea'); ta.className = 'copybuf'; ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Copied'); } catch (e) { toast('Copying is not possible. Please select the text.'); } ta.remove(); };
+  try { navigator.clipboard.writeText(t).then(() => toast('Copied'), fallback); } catch (e) { fallback(); }
+}
+function tableToTsv(el) { return Array.from(el.querySelectorAll('tr')).map(tr => Array.from(tr.children).map(c => c.innerText.replace(/\s+/g, ' ').trim()).join('\t')).join('\n'); }
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const more = document.getElementById('exportBtn');
+  if (more && more.open && !e.target.closest('.more summary')) setTimeout(() => { more.open = false; }, 0);
+  const t = e.target.closest('[data-tab],[data-mode],[data-action]'); if (!t) return;
+  if (t.dataset.tab) { S.tab = t.dataset.tab; render(); return; }
+  if (t.dataset.mode) { S.mode = t.dataset.mode; S.period = defaultPeriod(); render(); return; }
+  const a = t.dataset.action;
+  if (a === 'export') exportAll();
+  else if (a === 'export-investor') exportInvestor();
+  else if (a === 'export-brand') exportBrand();
+  else if (a === 'export-brands') exportAllBrands();
+  else if (a === 'toggle-group') { S.open[t.dataset.g] = !S.open[t.dataset.g]; render(); }
+  else if (a === 'reload') { loadData().then(() => { render(); toast('Data refreshed'); }).catch(err => toast(err.message)); }
+  else if (a === 'copy-reminder') {
+    const em = empMissing(peopleList(), shownWeeks(peopleList()));
+    copyText('Hi,\n\nthe following weekly submissions are still missing in Brand Time:\n' + em.map(x => `- ${x.e.name}: week ${x.kws.map(kwOf).join(', week ')}`).join('\n') + '\n\nPlease enter the hours and submit the week. If you were on leave or off sick, just let me know. Thanks!');
+  }
+  else if (a === 'cell-menu') { const k = t.dataset.e + '|' + t.dataset.w; S.cellMenu = S.cellMenu === k ? null : k; render(); }
+  else if (a === 'exc-set' || a === 'exc-clear') {
+    S.cellMenu = null;
+    const k = t.dataset.e + '|' + t.dataset.w; const m = Object.assign({}, S.excuses);
+    if (a === 'exc-set') m[k] = {reason: t.dataset.r, note: '', by: S.me.email, at: new Date().toISOString()}; else delete m[k];
+    S.excuses = m; saveExcuses();
+    render(); toast(a === 'exc-set' ? `Week ${kwOf(t.dataset.w)}: excused (${t.dataset.r})` : `Week ${kwOf(t.dataset.w)}: open again`);
+  }
+  else if (a === 'exc-edit') { S.excEdit = {e: t.dataset.e, w: t.dataset.w}; S.tab = 'review'; render(); const p = document.getElementById('excPanel'); if (p) p.scrollIntoView({block: 'center', behavior: 'smooth'}); }
+  else if (a === 'exc-cancel') { S.excEdit = null; render(); }
+  else if (a === 'exc-save' || a === 'exc-delete') {
+    const from = document.getElementById('excFrom').value, to = document.getElementById('excTo').value;
+    const reason = document.getElementById('excReason').value, note = document.getElementById('excNote').value.trim();
+    if (a === 'exc-save' && reason === 'Other' && !note) { toast('Please add a note for “Other”'); return; }
+    if (to < from) { toast('“to” cannot be before “from”'); return; }
+    const m = Object.assign({}, S.excuses);
+    for (const w of weekRange(from, to)) { const k = S.excEdit.e + '|' + w; if (a === 'exc-delete') delete m[k]; else m[k] = {reason, note, by: S.me.email, at: new Date().toISOString()}; }
+    S.excuses = m; saveExcuses();
+    S.excEdit = null; render(); toast(a === 'exc-save' ? 'Reason saved' : 'Reason removed');
+  }
+  else if (a === 'copy') copyText(document.getElementById(t.dataset.target).innerText);
+  else if (a === 'copy-table') { const el = document.getElementById(t.dataset.target).querySelector('table'); if (el) copyText(tableToTsv(el)); }
+  else if (a === 'ack' || a === 'unack') {
+    const m = Object.assign({}, S.acks);
+    if (a === 'ack') m[t.dataset.k] = {by: S.me.email, at: new Date().toISOString()}; else delete m[t.dataset.k];
+    S.acks = m; saveAcks(); render(); toast(a === 'ack' ? 'Marked as all good' : 'Open again');
+  }
+  else if (a === 'toggle-acked') { S.showAcked = !S.showAcked; render(); }
+  else if (a === 'copy-issues') copyText(ISSUES.filter(i => i.sev !== 'info').map(i => `${i.dept}, week ${i.kw}, ${i.iso ? fmtDate(new Date(i.iso)) : ''} ${i.emp}: ${i.msg}. ${i.det}`).join('\n') || 'No open items.');
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'startWeek') { S.settings.startWeek = t.value; saveSettings(); render(); toast(`Tracking from week ${kwOf(t.value)}`); return; }
+  if (t.id === 'autoAssign') { S.settings.autoAssign = t.checked; saveSettings(); render(); toast(t.checked ? 'Automatic assignment on' : 'Automatic assignment off'); return; }
+  if (t.id === 'includeDrafts') { S.settings.includeDrafts = t.checked; saveSettings(); render(); toast(t.checked ? 'Unsubmitted weeks are now counted' : 'Only submitted weeks are counted'); return; }
+  if (t.id === 'onlyMissing') { S.onlyMissing = t.checked; render(); return; }
+  if (t.dataset.pe != null) {
+    const em = t.dataset.pe; const f = t.dataset.f; const cur = Object.assign({}, S.people[em]);
+    if (f === 'required') cur.required = t.checked; else if (f === 'name') { const v = t.value.trim().replace(/\s+/g, ' '); if (v) cur.name = v; else delete cur.name; } else if (f === 'team') { if (t.value) cur.team = t.value; else delete cur.team; } else cur[f] = t.value;
+    S.people = Object.assign({}, S.people, {[em]: cur}); savePeople(); render(); return;
+  }
+  if (t.id === 'periodSel') { S.period = t.value; render(); }
+  else if (t.id === 'brandSel') { S.brandSel = t.value; render(); }
+  else if (t.id === 'hideNames') { S.settings.hideNames = t.checked; saveSettings(); render(); }
+  else if (t.name === 'method') { S.settings.method = t.value; saveSettings(); render(); }
+  else if (t.dataset.rate) { const v = parseFloat(String(t.value).replace(',', '.')); S.settings.rates[t.dataset.rate] = v > 0 ? v : null; saveSettings(); render(); }
+  else if (t.dataset.bset) {
+    const k = t.dataset.k; const c = Object.assign({name: t.dataset.name}, S.settings.brands[k]);
+    const b = t.dataset.bset;
+    if (b === 'group') c.group = t.value;
+    else if (b === 'kind') c.kind = t.value;
+    else if (b === 'alias') { if (t.value) c.alias = t.value; else delete c.alias; }
+    else { const v = parseFloat(String(t.value).replace(',', '.')); c.key = v > 0 ? v : null; }
+    S.settings.brands[k] = c; saveSettings(); render();
+  }
+});
+document.addEventListener('input', e => { if (e.target.id === 'q') { S.q = e.target.value; renderDataTable(); } });
+const tip = document.getElementById('tip');
+document.addEventListener('mouseover', e => { const t = e.target.closest('[data-tip]'); if (!t) { tip.hidden = true; return; } tip.textContent = t.dataset.tip; tip.hidden = false; });
+document.addEventListener('mousemove', e => { if (tip.hidden) return; const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8); tip.style.left = x + 'px'; tip.style.top = (e.clientY + 16) + 'px'; });
+document.addEventListener('mouseleave', () => tip.hidden = true);
+
+/* ---------- start ---------- */
+async function init() {
+  render();
+  try { await loadData(); rebuild(); S.period = defaultPeriod(); S.ready = true; } catch (e) { S.error = e.message || 'The report could not be loaded.'; }
+  render();
+}
+// When shown inside Brand Time, tell the page around us how tall we are so it can size the frame to fit
+if (window.parent !== window && window.ResizeObserver) {
+  const sendHeight = () => { try { parent.postMessage({type: 'rpt-height', h: Math.ceil(document.body.getBoundingClientRect().height)}, location.origin); } catch (e) {} };
+  new ResizeObserver(sendHeight).observe(document.body); sendHeight();
+}
+init();
+
+</script>
+</body>
+</html>
