@@ -1360,6 +1360,10 @@ function renderSocial(R){
   $('sPanelAccounts').hidden = single;
   $('sAccSub').textContent = brandView ? 'By channel' : 'Select a row to open that brand';
   if (!single){
+    // Posts published per account (only when the posts export is connected)
+    const allPosts = state.social.postsConnected ? (state.social.posts || []) : null;
+    const oldestPost = allPosts ? allPosts.reduce((m, x) => x.published < m ? x.published : m, '9999') : null;
+    const postCount = (k, w) => allPosts ? allPosts.filter(x => x.platform + '|' + x.account === k && x.published >= w[0] && x.published <= w[1]).length : null;
     const rows = accounts.map(k => {
       const [platform, account] = [k.slice(0, k.indexOf('|')), k.slice(k.indexOf('|') + 1)];
       const c = socSum(curRows.filter(r => r.platform + '|' + r.account === k));
@@ -1367,15 +1371,16 @@ function renderSocial(R){
       const brand = brandOf({ account });
       return { key: k, brand, account: brand, handle: account, platform: platLabel(platform), followers: fCur.get(k)?.followers ?? null,
         reach: c.reach, dReach: p && delta(c.reach, p.reach), impressions: c.impressions, dImpr: p && delta(c.impressions, p.impressions),
-        engagements: c.engagements, dEng: p && delta(c.engagements, p.engagements), er: c.er };
+        engagements: c.engagements, dEng: p && delta(c.engagements, p.engagements), er: c.er,
+        posts: postCount(k, ci), dPosts: allPosts && pi && oldestPost <= pi[0] ? delta(postCount(k, ci), postCount(k, pi)) : null };
     }).sort((a, b) => b.impressions - a.impressions);
     const dl = (d) => d ? `<span class="dl ${d.cls}">${d.txt}</span>` : '';
-    $('sTblAccounts').innerHTML = `<table><thead><tr><th>Brand</th><th>Platform</th><th class="n">Followers</th><th class="n">Reach</th><th class="n">Impressions</th><th class="n">Engagements</th><th class="n">Eng. rate</th></tr></thead><tbody>${rows.map(r => `
+    $('sTblAccounts').innerHTML = `<table><thead><tr><th>Brand</th><th>Platform</th>${allPosts ? '<th class="n">Posts</th>' : ''}<th class="n">Followers</th><th class="n">Reach</th><th class="n">Impressions</th><th class="n">Engagements</th><th class="n">Eng. rate</th></tr></thead><tbody>${rows.map(r => `
       <tr ${brandView ? '' : `class="click" data-brand="${esc(r.brand)}" tabindex="0"`}><td><b>${esc(r.account)}</b></td><td>${esc(r.platform)}</td>
-      <td class="n">${r.followers == null ? '–' : fNum(r.followers)}</td>
+      ${allPosts ? `<td class="n">${fNum(r.posts)}${dl(r.dPosts)}</td>` : ''}<td class="n">${r.followers == null ? '–' : fNum(r.followers)}</td>
       <td class="n">${fNum(r.reach)}${dl(r.dReach)}</td><td class="n">${fNum(r.impressions)}${dl(r.dImpr)}</td>
       <td class="n">${fNum(r.engagements)}${dl(r.dEng)}</td><td class="n">${fPct(r.er)}</td></tr>`).join('')}</tbody></table>`;
-    state.csv.sAccounts = { name: 'social-accounts', cols: ['brand','platform','handle','followers','reach','impressions','engagements','er'], rows };
+    state.csv.sAccounts = { name: 'social-accounts', cols: ['brand','platform','handle','posts','followers','reach','impressions','engagements','er'], rows };
   }
 
   const byPlat = sumByKey([curRows.map(r => ({ platform: platLabel(r.platform), impressions: r.impressions || 0 }))], 'platform', ['impressions']).sort((a, b) => b.impressions - a.impressions);
@@ -3013,7 +3018,7 @@ function bindAsk(){
 }
 
 // Show any unexpected error on screen instead of failing silently.
-const DASHBOARD_VERSION = '2026-10-16.1';
+const DASHBOARD_VERSION = '2026-10-20.1';
 function showCrash(msg){
   try {
     setStatus('');
