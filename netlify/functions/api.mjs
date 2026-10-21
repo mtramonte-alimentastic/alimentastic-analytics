@@ -26,6 +26,13 @@ function isAdmin(u) {
   return adminEmails().includes(String(u.email || '').toLowerCase());
 }
 
+/* Times are kept as decimal hours but always a whole number of minutes (0 to 24 h), whatever the client sends. */
+function wholeMinutes(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 24) return null;
+  return Math.round(Math.round(n * 60) / 60 * 1e6) / 1e6;
+}
+
 /* Strip anything we didn't put there, and cap the shape so one bad client
    can't write an unbounded blob. */
 function cleanDoc(raw) {
@@ -39,19 +46,15 @@ function cleanDoc(raw) {
   Object.keys(days).slice(0, 10).forEach((k) => {
     if (!DATE_RE.test(k)) return;
     const d = days[k] || {};
-    const worked = Number(d.worked);
     const rows = Array.isArray(d.rows) ? d.rows.slice(0, 40) : [];
     out.days[k] = {
-      worked: Number.isFinite(worked) && worked >= 0 && worked <= 24 ? worked : null,
-      rows: rows.map((r) => {
-        const h = Number(r && r.h);
-        return {
-          b: String((r && r.b) || '').slice(0, 60),
-          t: String((r && r.t) || '').slice(0, 60),
-          h: Number.isFinite(h) && h >= 0 && h <= 24 ? h : 0,
-          n: String((r && r.n) || '').slice(0, 300)
-        };
-      })
+      worked: d.worked === null || d.worked === undefined || d.worked === '' ? null : wholeMinutes(d.worked),
+      rows: rows.map((r) => ({
+        b: String((r && r.b) || '').slice(0, 60),
+        t: String((r && r.t) || '').slice(0, 60),
+        h: wholeMinutes(r && r.h) ?? 0,
+        n: String((r && r.n) || '').slice(0, 300)
+      }))
     };
   });
   return out;

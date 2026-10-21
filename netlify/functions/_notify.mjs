@@ -4,7 +4,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function r1(n) { return Math.round(n * 10) / 10; }
+function r2(n) { return Math.round(n * 100) / 100; }
 function colLetter(n) {
   let s = '';
   while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
@@ -142,33 +142,33 @@ function addWeekSheet(wb, cfg, weekStr, rowsForWeek, team) {
     r.getCell(3).value = f.type;
     r.getCell(4).value = f.brand;
     r.getCell(5).value = f.hours;
-    r.getCell(5).numFmt = '0.0';
+    r.getCell(5).numFmt = '0.00';
     r.getCell(6).value = f.task;
     r.getCell(7).value = f.notes;
     r.getCell(8).value = f.bmd;
-    r.getCell(8).numFmt = '0.0';
-    const diff = r1(groupSum[f.employee + '||' + f.date] - f.bmd);
+    r.getCell(8).numFmt = '0.00';
+    const diff = r2(groupSum[f.employee + '||' + f.date] - f.bmd);
     r.getCell(9).value = {
       formula: `IF(OR(B${rowNum}="",H${rowNum}=""),"",SUMIFS($E$${firstDataRow}:$E$${lastDataRow},$B$${firstDataRow}:$B$${lastDataRow},B${rowNum},$A$${firstDataRow}:$A$${lastDataRow},A${rowNum})-H${rowNum})`,
       result: diff
     };
-    r.getCell(9).numFmt = '0.0';
+    r.getCell(9).numFmt = '0.00';
     r.eachCell((c) => { if (!c.font || c.font === BASE_FONT) c.font = BASE_FONT; });
-    brandTotals.set(f.brand, r1((brandTotals.get(f.brand) || 0) + f.hours));
+    brandTotals.set(f.brand, (brandTotals.get(f.brand) || 0) + f.hours); // exact; rounded only when written
   });
   if (!flat.length) {
     ws.getRow(firstDataRow).getCell(1).value = 'No entries for this week.';
     ws.getRow(firstDataRow).getCell(1).font = MUTED_FONT;
   }
 
-  const weekTotal = r1(flat.reduce((s, f) => s + f.hours, 0));
+  const weekTotal = flat.reduce((s, f) => s + f.hours, 0); // exact; rounded only when written
   ws.getCell(3, 4).value = 'Total hours';
   ws.getCell(3, 4).font = BOLD_FONT;
   ws.getCell(3, 5).value = flat.length
-    ? { formula: `SUM(E${firstDataRow}:E${lastDataRow})`, result: weekTotal }
+    ? { formula: `SUM(E${firstDataRow}:E${lastDataRow})`, result: r2(weekTotal) }
     : 0;
   ws.getCell(3, 5).font = BOLD_FONT;
-  ws.getCell(3, 5).numFmt = '0.0';
+  ws.getCell(3, 5).numFmt = '0.00';
 
   return {
     sheetName: name, firstDataRow, lastDataRow: flat.length ? lastDataRow : firstDataRow - 1,
@@ -201,21 +201,22 @@ function addEvaluationSheet(wb, cfg, weekMeta) {
     r.getCell(1).font = BASE_FONT;
     let rowTotal = 0;
     weekMeta.forEach((wm, ci) => {
-      const val = r1(wm.brandTotals.get(b.name) || 0);
-      rowTotal += val;
+      const raw = wm.brandTotals.get(b.name) || 0;
+      const val = r2(raw);
+      rowTotal += raw;
       const cell = r.getCell(2 + ci);
       cell.value = wm.lastDataRow >= wm.firstDataRow
         ? { formula: `SUMIFS('${wm.sheetName}'!$${wm.hoursCol}$${wm.firstDataRow}:$${wm.hoursCol}$${wm.lastDataRow},'${wm.sheetName}'!$${wm.brandCol}$${wm.firstDataRow}:$${wm.brandCol}$${wm.lastDataRow},$A${rowNum})`, result: val }
         : 0;
-      cell.numFmt = '0.0';
+      cell.numFmt = '0.00';
       cell.font = BASE_FONT;
     });
     const totalCell = r.getCell(2 + weekMeta.length);
     totalCell.value = {
       formula: `SUM(${colLetter(2)}${rowNum}:${colLetter(1 + weekMeta.length)}${rowNum})`,
-      result: r1(rowTotal)
+      result: r2(rowTotal)
     };
-    totalCell.numFmt = '0.0';
+    totalCell.numFmt = '0.00';
     totalCell.font = BOLD_FONT;
   });
 
@@ -226,11 +227,11 @@ function addEvaluationSheet(wb, cfg, weekMeta) {
   for (let c = 2; c <= 2 + weekMeta.length; c++) {
     const colL = colLetter(c);
     let sum = 0;
-    if (c - 2 < weekMeta.length) sum = r1(weekMeta[c - 2].weekTotal);
+    if (c - 2 < weekMeta.length) sum = r2(weekMeta[c - 2].weekTotal);
     else weekMeta.forEach((wm) => { sum += wm.weekTotal; });
-    sum = r1(sum);
+    sum = r2(sum);
     totalRow.getCell(c).value = { formula: `SUM(${colL}${headerRowIdx + 1}:${colL}${totalRowIdx - 1})`, result: sum };
-    totalRow.getCell(c).numFmt = '0.0';
+    totalRow.getCell(c).numFmt = '0.00';
     totalRow.getCell(c).font = BOLD_FONT;
   }
   ws.views = [{ state: 'frozen', ySplit: headerRowIdx }];

@@ -113,9 +113,10 @@ nav.tabs button[aria-current="true"]{color:var(--ink);border-bottom-color:var(--
 .stepper{display:flex;align-items:stretch;border:1px solid var(--rule);background:var(--paper)}
 .stepper button{width:32px;border:0;background:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted)}
 .stepper button:hover{color:var(--ink);background:var(--surface2)}
-.stepper input{width:58px;border:0;background:none;text-align:center;font-variant-numeric:tabular-nums;font-weight:600;padding:7px 0}
+.stepper input{width:64px;border:0;background:none;text-align:center;font-variant-numeric:tabular-nums;font-weight:600;padding:7px 0}
 .stepper input::-webkit-outer-spin-button,.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .stepper input[type=number]{-moz-appearance:textfield}
+.stepper input.bad,.row .hbox input.bad{color:var(--red)}
 .remain{font-size:12.5px;font-weight:600;padding:4px 8px;border:1px solid var(--rule);background:var(--paper)}
 .remain.warn{color:var(--red);border-color:var(--red)}
 .remain.done{color:var(--ok);border-color:var(--ok)}
@@ -319,6 +320,52 @@ function weekRangeLabel(weekId){
 }
 function isoDate(d){return d.getUTCFullYear()+"-"+pad(d.getUTCMonth()+1)+"-"+pad(d.getUTCDate());}
 function r1(n){return Math.round(n*10)/10;}
+function r2(n){return Math.round(n*100)/100;}
+
+/* ===================== time entry =====================
+   Hours are stored as decimal hours (so reports and Excel keep working) but are always a whole number of
+   minutes. Everything on the entry screen is calculated in integer minutes, so sums never drift. */
+function toMin(h){ return Math.round((+h||0)*60); }
+function fromMin(m){ return Math.round(m/60*1e6)/1e6; }
+function fmtMin(m){ var sign=m<0?"-":""; m=Math.abs(Math.round(m)); return sign+Math.floor(m/60)+":"+pad(m%60); }
+function fmtHM(h){ return fmtMin(toMin(h)); }
+/* Accepts 7:30, 7.5 / 7,5 (decimal hours), 8 (hours), 1h30, 1h 30m, 1h, 45m. Returns minutes, or null. */
+function parseTime(str){
+  var s=String(str==null?"":str).trim().toLowerCase().replace(/\s+/g," ").replace(",",".");
+  if(!s)return null;
+  var m,min=null;
+  if((m=s.match(/^(\d{1,2}):(\d{1,2})$/))){ if(+m[2]<60)min=+m[1]*60+(+m[2]); }
+  else if((m=s.match(/^(\d+(?:\.\d+)?)$/))){ min=Math.round(parseFloat(m[1])*60); }
+  else if((m=s.match(/^(\d+)\s*h(?:\s*(\d{1,2})\s*(?:m|min)?)?$/))){ if(m[2]===undefined||+m[2]<60)min=+m[1]*60+(m[2]?+m[2]:0); }
+  else if((m=s.match(/^(\d+)\s*(?:m|min)$/))){ min=+m[1]; }
+  if(min===null||min>1440)return null;
+  return min;
+}
+/* A text field that takes a time as h:mm. getH/setH read and write decimal hours (null = empty). */
+function timeField(getH,setH,o){
+  var inp=el("input",{type:"text",inputmode:"text",autocomplete:"off",spellcheck:"false",
+    placeholder:o.placeholder||"h:mm","aria-label":o.label,title:"Enter the time as h:mm, for example 7:30 (7.5 and 1h30 also work)"});
+  var cur=getH(); inp.value=(cur===null||cur===undefined)?"":fmtHM(cur);
+  inp.addEventListener("input",function(){
+    var raw=inp.value.trim();
+    if(raw===""){ inp.classList.remove("bad"); if(o.allowEmpty)setH(null); return; }
+    var m=parseTime(raw);
+    if(m===null){ inp.classList.add("bad"); return; }     // still typing, or not a time: keep the last good value
+    inp.classList.remove("bad"); setH(fromMin(m));
+  });
+  inp.addEventListener("blur",function(){
+    var raw=inp.value.trim(); inp.classList.remove("bad");
+    if(raw===""){ if(o.allowEmpty){ setH(null); inp.value=""; } else { setH(0); inp.value=fmtMin(0); } return; }
+    var m=parseTime(raw);
+    if(m===null){ var c=getH(); inp.value=(c===null||c===undefined)?"":fmtHM(c); flash("Please enter the time as h:mm, for example 7:30."); return; }
+    inp.value=fmtMin(m); setH(fromMin(m));
+  });
+  inp.addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } });
+  return inp;
+}
+function dayAllocatedMin(key){ return dayRows(key).reduce(function(sum,r){return sum+toMin(r.h);},0); }
+function dayRemainMin(key){ var w=dayWorked(key); return (w===null?0:toMin(w))-dayAllocatedMin(key); }
+function remainText(rem){ return rem===0?"Fully assigned":(rem>0?fmtMin(rem)+" left":fmtMin(-rem)+" over"); }
 
 /* ===================== tiny dom ===================== */
 function el(tag,attrs,kids){
@@ -473,8 +520,8 @@ function renderWeek(){
       el("div",{class:"pct"+(pct>=80?" hit":""),text:t.worked?Math.round(pct)+"%":"—"}),
       el("div",{class:"lbl",text:"of hours worked went to REPLOID brands"}),
       el("div",{class:"alt"},[
-        el("div",{},[document.createTextNode("Worked "),el("b",{text:r1(t.worked)+" h"}),
-                     document.createTextNode(" · REPLOID "),el("b",{text:r1(t.reploid)+" h"})]),
+        el("div",{},[document.createTextNode("Worked "),el("b",{text:fmtHM(t.worked)+" h"}),
+                     document.createTextNode(" · REPLOID "),el("b",{text:fmtHM(t.reploid)+" h"})]),
         el("div",{text:"Excluding overhead: "+((t.reploid+t.external)>0?Math.round(sh.ofFacing)+"%":"—")})
       ])
     ]));
@@ -507,9 +554,9 @@ function renderWeek(){
       }}),
     el("div",{id:"saveStatus",class:"status"})
   ]);
-  if(!S.closed && !sub && t.worked>0 && t.allocated<t.worked-0.05){
+  if(!S.closed && !sub && t.worked>0 && toMin(t.allocated)<toMin(t.worked)){
     foot.appendChild(el("div",{class:"status err",
-      text:r1(t.worked-t.allocated)+" h still unassigned this week"}));
+      text:fmtMin(toMin(t.worked)-toMin(t.allocated))+" h still unassigned this week"}));
   }
   m.appendChild(foot);
   if(S.closed){
@@ -538,33 +585,28 @@ function renderDay(d){
     el("div",{class:"dname"},[document.createTextNode(d.short),el("span",{text:d.label})]),
     bar,
     el("div",{class:"hrs"},[
-      document.createTextNode(worked===null?"—":r1(worked)+" h"),
-      (worked!==null&&alloc<worked-0.05)?el("em",{text:" · "+r1(worked-alloc)+" left"}):null
+      document.createTextNode(worked===null?"—":fmtHM(worked)+" h"),
+      (worked!==null&&dayRemainMin(d.key)>0)?el("em",{text:" · "+fmtMin(dayRemainMin(d.key))+" left"}):null
     ]),
     el("div",{class:"chev",text:open?"▲":"▼"})
   ]));
   if(!open)return wrap;
 
   var body=el("div",{class:"dbody"});
-  var remain=r1((worked||0)-alloc);
-  var remainEl=el("div",{class:"remain"+(Math.abs(remain)<0.05?" done":" warn"),
-    text:Math.abs(remain)<0.05?"Fully assigned":(remain>0?remain+" h left":Math.abs(remain)+" h over")});
+  var remMin=dayRemainMin(d.key);
+  var remainEl=el("div",{class:"remain"+(remMin===0?" done":" warn"),text:remainText(remMin)});
 
-  var wInput=el("input",{type:"number",step:"0.25",min:"0",max:"24",inputmode:"decimal",
-    value:worked===null?"":String(worked),"aria-label":"Hours worked"});
-  wInput.addEventListener("input",function(){
-    var v=parseFloat(wInput.value);
-    ensureDay(d.key).worked=isNaN(v)?null:v;
-    markDirty(); refreshRemain(d.key,remainEl);
-  });
+  var wInput=timeField(function(){return dayWorked(d.key);},function(h){
+    ensureDay(d.key).worked=h; markDirty(); refreshRemain(d.key,remainEl);
+  },{label:"Hours worked",allowEmpty:true});
   body.appendChild(el("div",{class:"workedline"},[
     el("label",{text:"Hours worked"}),
     el("div",{class:"stepper"},[
-      el("button",{type:"button","aria-label":"Less",text:"−",onclick:function(){
-        setWorked(d.key,Math.max(0,(dayWorked(d.key)||0)-0.5));}}),
+      el("button",{type:"button","aria-label":"15 minutes less",text:"−",onclick:function(){
+        setWorked(d.key,fromMin(Math.max(0,toMin(dayWorked(d.key)||0)-15)));}}),
       wInput,
-      el("button",{type:"button","aria-label":"More",text:"+",onclick:function(){
-        setWorked(d.key,(dayWorked(d.key)||0)+0.5);}})
+      el("button",{type:"button","aria-label":"15 minutes more",text:"+",onclick:function(){
+        setWorked(d.key,fromMin(Math.min(1440,toMin(dayWorked(d.key)||0)+15)));}})
     ]),
     remainEl,
     el("button",{class:"copyday",text:"Copy previous day",onclick:function(){copyPrevDay(d);}})
@@ -583,8 +625,8 @@ function renderDay(d){
     el("button",{class:"btn ghost",text:"+ Add",onclick:function(){
       if(!addSel.value)return;
       var dd=ensureDay(d.key);
-      var left=(dd.worked||0)-dayAllocated(d.key);
-      dd.rows.push({b:addSel.value,t:(S.cfg.tasks||[])[0]||"",h:left>0?r1(left):0,n:""});
+      var leftMin=toMin(dd.worked||0)-dayAllocatedMin(d.key);
+      dd.rows.push({b:addSel.value,t:(S.cfg.tasks||[])[0]||"",h:leftMin>0?fromMin(leftMin):0,n:""});
       markDirty(); render();
     }})
   ]));
@@ -622,11 +664,9 @@ function renderRow(d,r,i,remainEl){
   });
   tsel.addEventListener("change",function(){ r.t=tsel.value; markDirty(); });
 
-  var hin=el("input",{type:"number",step:"0.25",min:"0",inputmode:"decimal",
-    value:String(r.h||0),"aria-label":"Hours on this brand"});
-  hin.addEventListener("input",function(){
-    r.h=parseFloat(hin.value)||0; markDirty(); refreshRemain(d.key,remainEl);
-  });
+  var hin=timeField(function(){return r.h||0;},function(h){
+    r.h=h||0; markDirty(); refreshRemain(d.key,remainEl);
+  },{label:"Time on this brand",placeholder:"0:00"});
 
   var nin=el("input",{type:"text",placeholder:"Note (optional)",value:r.n||"","aria-label":"Note"});
   nin.addEventListener("input",function(){ r.n=nin.value; markDirty(); });
@@ -643,11 +683,11 @@ function renderRow(d,r,i,remainEl){
 
 function refreshRemain(key,node){
   if(!node)return;
-  var rem=r1((dayWorked(key)||0)-dayAllocated(key));
-  node.className="remain"+(Math.abs(rem)<0.05?" done":" warn");
-  node.textContent=Math.abs(rem)<0.05?"Fully assigned":(rem>0?rem+" h left":Math.abs(rem)+" h over");
+  var rem=dayRemainMin(key);
+  node.className="remain"+(rem===0?" done":" warn");
+  node.textContent=remainText(rem);
 }
-function setWorked(key,v){ ensureDay(key).worked=r1(v); markDirty(); render(); }
+function setWorked(key,v){ ensureDay(key).worked=fromMin(toMin(v)); markDirty(); render(); }
 function ensureDefault(d){
   if(S.closed)return;
   var dd=ensureDay(d.key);
@@ -722,8 +762,8 @@ function renderTeam(){
         (!p.doc)?el("div",{class:"miss",text:"nothing entered"}):
         (!p.doc.submitted?el("div",{class:"miss",text:"not submitted"}):null) ]),
       el("td",{text:p.team||"—",style:p.team?"":"color:var(--muted)"}),
-      el("td",{class:"num",text:t.worked?r1(t.worked):"—"}),
-      el("td",{class:"num",text:t.reploid?r1(t.reploid):"—"}),
+      el("td",{class:"num",text:t.worked?fmtHM(t.worked):"—"}),
+      el("td",{class:"num",text:t.reploid?fmtHM(t.reploid):"—"}),
       el("td",{},[ el("div",{style:"text-align:right;font-variant-numeric:tabular-nums",
         text:t.worked?Math.round(sh.ofWorked)+"%":"—"}), mini ])
     ]));
@@ -732,8 +772,8 @@ function renderTeam(){
   tb.appendChild(el("tr",{class:"total"},[
     el("td",{text:S.teamFilter?(S.teamFilter==="__none"?"No team":S.teamFilter):"All teams"}),
     el("td",{text:""}),
-    el("td",{class:"num",text:r1(tot.worked)}),
-    el("td",{class:"num",text:r1(tot.reploid)}),
+    el("td",{class:"num",text:fmtHM(tot.worked)}),
+    el("td",{class:"num",text:fmtHM(tot.reploid)}),
     el("td",{class:"num",text:tot.worked?Math.round(stot.ofWorked)+"%":"—"})
   ]));
   m.appendChild(el("table",{},[el("thead",{},[el("tr",{},[
@@ -967,25 +1007,25 @@ function addWeekSheetXL(wb,weekId,flat,label){
     r.getCell(2).value=f.employee;
     r.getCell(3).value=f.type;
     r.getCell(4).value=f.brand;
-    r.getCell(5).value=f.hours; r.getCell(5).numFmt="0.0";
+    r.getCell(5).value=f.hours; r.getCell(5).numFmt="0.00";
     r.getCell(6).value=f.task;
     r.getCell(7).value=f.notes;
-    r.getCell(8).value=f.bmd; r.getCell(8).numFmt="0.0";
+    r.getCell(8).value=f.bmd; r.getCell(8).numFmt="0.00";
     r.getCell(10).value=f.team;
-    var diff=r1(groupSum[f.employee+"||"+f.date]-f.bmd);
+    var diff=r2(groupSum[f.employee+"||"+f.date]-f.bmd);
     r.getCell(9).value={formula:"IF(OR(B"+rowNum+'="",H'+rowNum+'=""),"",SUMIFS($E$'+firstDataRow+":$E$"+lastDataRow+",$B$"+firstDataRow+":$B$"+lastDataRow+",B"+rowNum+",$A$"+firstDataRow+":$A$"+lastDataRow+",A"+rowNum+")-H"+rowNum+")",result:diff};
-    r.getCell(9).numFmt="0.0";
+    r.getCell(9).numFmt="0.00";
     r.eachCell(function(c){ c.font=BASE_FONT; });
-    brandTotals[f.brand]=r1((brandTotals[f.brand]||0)+f.hours);
+    brandTotals[f.brand]=(brandTotals[f.brand]||0)+f.hours;     // exact; rounded only when written
   });
   if(!flat.length){
     ws.getRow(firstDataRow).getCell(1).value="No entries for this week.";
     ws.getRow(firstDataRow).getCell(1).font=MUTED_FONT;
   }
-  var weekTotal=r1(flat.reduce(function(s,f){return s+f.hours;},0));
+  var weekTotal=flat.reduce(function(s,f){return s+f.hours;},0);     // exact; rounded only when written
   ws.getCell(3,4).value="Total hours"; ws.getCell(3,4).font=BOLD_FONT;
-  ws.getCell(3,5).value=flat.length?{formula:"SUM(E"+firstDataRow+":E"+lastDataRow+")",result:weekTotal}:0;
-  ws.getCell(3,5).font=BOLD_FONT; ws.getCell(3,5).numFmt="0.0";
+  ws.getCell(3,5).value=flat.length?{formula:"SUM(E"+firstDataRow+":E"+lastDataRow+")",result:r2(weekTotal)}:0;
+  ws.getCell(3,5).font=BOLD_FONT; ws.getCell(3,5).numFmt="0.00";
 
   return {sheetName:name,firstDataRow:firstDataRow,lastDataRow:flat.length?lastDataRow:firstDataRow-1,
     brandCol:"D",hoursCol:"E",brandTotals:brandTotals,weekTotal:weekTotal};
@@ -1013,16 +1053,16 @@ function addEvaluationSheetXL(wb,weekMeta){
     r.getCell(1).value=b.name; r.getCell(1).font=BASE_FONT;
     var rowTotal=0;
     weekMeta.forEach(function(wm,ci){
-      var val=r1(wm.brandTotals[b.name]||0); rowTotal+=val;
+      var raw=wm.brandTotals[b.name]||0, val=r2(raw); rowTotal+=raw;
       var cell=r.getCell(2+ci);
       cell.value=wm.lastDataRow>=wm.firstDataRow
         ? {formula:"SUMIFS('"+wm.sheetName+"'!$"+wm.hoursCol+"$"+wm.firstDataRow+":$"+wm.hoursCol+"$"+wm.lastDataRow+",'"+wm.sheetName+"'!$"+wm.brandCol+"$"+wm.firstDataRow+":$"+wm.brandCol+"$"+wm.lastDataRow+",$A"+rowNum+")",result:val}
         : 0;
-      cell.numFmt="0.0"; cell.font=BASE_FONT;
+      cell.numFmt="0.00"; cell.font=BASE_FONT;
     });
     var totalCell=r.getCell(2+weekMeta.length);
-    totalCell.value={formula:"SUM("+colLetter(2)+rowNum+":"+colLetter(1+weekMeta.length)+rowNum+")",result:r1(rowTotal)};
-    totalCell.numFmt="0.0"; totalCell.font=BOLD_FONT;
+    totalCell.value={formula:"SUM("+colLetter(2)+rowNum+":"+colLetter(1+weekMeta.length)+rowNum+")",result:r2(rowTotal)};
+    totalCell.numFmt="0.00"; totalCell.font=BOLD_FONT;
   });
 
   var totalRowIdx=headerRowIdx+1+brands.length;
@@ -1030,11 +1070,11 @@ function addEvaluationSheetXL(wb,weekMeta){
   totalRow.getCell(1).value="Total"; totalRow.getCell(1).font=BOLD_FONT;
   for(var c=2;c<=2+weekMeta.length;c++){
     var colL=colLetter(c), sum=0;
-    if(c-2<weekMeta.length)sum=r1(weekMeta[c-2].weekTotal);
+    if(c-2<weekMeta.length)sum=r2(weekMeta[c-2].weekTotal);
     else weekMeta.forEach(function(wm){ sum+=wm.weekTotal; });
-    sum=r1(sum);
+    sum=r2(sum);
     totalRow.getCell(c).value={formula:"SUM("+colL+(headerRowIdx+1)+":"+colL+(totalRowIdx-1)+")",result:sum};
-    totalRow.getCell(c).numFmt="0.0"; totalRow.getCell(c).font=BOLD_FONT;
+    totalRow.getCell(c).numFmt="0.00"; totalRow.getCell(c).font=BOLD_FONT;
   }
   ws.views=[{state:"frozen",ySplit:headerRowIdx}];
 }
