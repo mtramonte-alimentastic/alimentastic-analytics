@@ -1,27 +1,5 @@
 [build]
-  publish  = "public"
-  command  = "echo 'static site, nothing to build'"
+  publish = "."
 
 [functions]
-  directory   = "netlify/functions"
-  node_bundler = "esbuild"
-
-# Friendly paths for the two endpoints the app calls.
-[[redirects]]
-  from   = "/api"
-  to     = "/.netlify/functions/api"
-  status = 200
-  force  = true
-
-[[redirects]]
-  from   = "/auth"
-  to     = "/.netlify/functions/auth"
-  status = 200
-  force  = true
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options        = "SAMEORIGIN"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "strict-origin-when-cross-origin"
+  directory = "netlify/functions"
