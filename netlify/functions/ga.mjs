@@ -10,6 +10,7 @@
 //   DASHBOARD_PASSWORD  optional: if set, viewers must enter this password
 
 import crypto from 'node:crypto';
+import { getStore } from '@netlify/blobs';
 
 const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/spreadsheets.readonly';
 let cached = { token: null, exp: 0 };
@@ -769,8 +770,103 @@ async function chatTurn(body) {
   return { content: j.content || [], stop_reason: j.stop_reason };
 }
 
-export default async (req) => {
-  if (!authorised(req)) return json(401, { error: 'Password required.' });
+// ---------- Social sheet (cached briefly) and permanent post thumbnails ----------
+async function readSocialSheet() {
+  let id = (process.env.SOCIAL_SHEET_ID || '').trim();
+  const m = id.match(/\/d\/([a-zA-Z0-9_-]+)/); if (m) id = m[1];
+  if (!id) throw fail('The social data sheet is not connected yet. Add SOCIAL_SHEET_ID (the Google Sheet link or ID) in Netlify under Site configuration → Environment variables, then redeploy.');
+  const tab = (process.env.SOCIAL_SHEET_TAB || '').trim();
+  const fTab = (process.env.SOCIAL_FOLLOWERS_TAB || '').trim();
+  const pTab = (process.env.SOCIAL_POSTS_TAB || '').trim();
+  const rng = (name) => name ? `'${name.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
+  const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : [], pTab ? [rng(pTab)] : []);
+  const qs = ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+  let j;
+  try {
+    j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
+  } catch (e) {
+    if (fTab && /Unable to parse range/i.test(e.message) && e.message.includes(fTab)) throw fail(`The sheet has no tab called "${fTab}". Check SOCIAL_FOLLOWERS_TAB in Netlify (it must match the tab name exactly).`, 400);
+    if (pTab && /Unable to parse range/i.test(e.message) && e.message.includes(pTab)) throw fail(`The sheet has no tab called "${pTab}". Check SOCIAL_POSTS_TAB in Netlify (it must match the tab name exactly).`, 400);
+    if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check SOCIAL_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400);
+    throw e;
+  }
+  const vr = (j.valueRanges || []).map(v => v.values || []);
+  const main = vr[0], fol = fTab ? vr[1] : null, posts = pTab ? vr[fTab ? 2 : 1] : null;
+  const out = parseSocial(main || []);
+  if (fol && fol.length) {
+    // Follower snapshots: only rows with a follower count, added without touching reach/impressions.
+    parseSocial(fol).rows.filter(r => r.followers != null)
+      .forEach(r => out.rows.push({ ...r, reach: null, impressions: null, engagements: null, newFollowers: null, snapshot: true }));
+    out.rows.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  out.postsConnected = !!pTab;
+  out.posts = posts ? parsePosts(posts) : [];
+  return out;
+}
+
+const socialCache = { at: 0, data: null };
+async function socialCached() {
+  if (socialCache.data && Date.now() - socialCache.at < 5 * 60 * 1000) return socialCache.data;
+  socialCache.data = await readSocialSheet(); socialCache.at = Date.now();
+  return socialCache.data;
+}
+// Instagram image links expire after a few weeks, so each thumbnail is saved to Netlify Blobs
+// the first time it is seen with a working link, and served from there afterwards.
+const thumbStore = () => getStore({ name: 'post-thumbs', consistency: 'strong' });
+const thumbKey = (id) => String(id).replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 200);
+const savedThumbs = { at: 0, keys: null };
+async function savedThumbKeys() {
+  if (savedThumbs.keys && Date.now() - savedThumbs.at < 10 * 60 * 1000) return savedThumbs.keys;
+  const keys = new Set();
+  try { const { blobs } = await thumbStore().list(); blobs.forEach(x => keys.add(x.key)); } catch (e) { /* storage not available (e.g. local test) */ }
+  savedThumbs.keys = keys; savedThumbs.at = Date.now();
+  return keys;
+}
+async function saveThumb(id, src) {
+  try {
+    const r = await fetch(src);
+    if (!r.ok) return false;
+    const type = r.headers.get('content-type') || 'image/jpeg';
+    if (!type.startsWith('image/')) return false;
+    const buf = await r.arrayBuffer();
+    if (!buf.byteLength || buf.byteLength > 2_500_000) return false;
+    await thumbStore().set(thumbKey(id), buf, { metadata: { type, savedAt: new Date().toISOString() } });
+    (await savedThumbKeys()).add(thumbKey(id));
+    return true;
+  } catch (e) { return false; }
+}
+async function withStoredThumbs(posts, context) {
+  const keys = await savedThumbKeys();
+  const toSave = posts.filter(p => p.thumb && !keys.has(thumbKey(p.id))).slice(0, 40);
+  // Save new thumbnails in the background (after the response is sent) while their links still work.
+  if (toSave.length) {
+    const job = (async () => { for (let i = 0; i < toSave.length; i += 5) await Promise.all(toSave.slice(i, i + 5).map(p => saveThumb(p.id, p.thumb))); })();
+    if (context && typeof context.waitUntil === 'function') context.waitUntil(job); else await job;
+  }
+  return posts.map(p => (keys.has(thumbKey(p.id)) || p.thumb) ? { ...p, thumb: `/.netlify/functions/ga?action=thumb&id=${encodeURIComponent(p.id)}` } : p);
+}
+async function serveThumb(id) {
+  if (!id || id.length > 200) return new Response('Not found', { status: 404 });
+  const key = thumbKey(id);
+  try {
+    const hit = await thumbStore().getWithMetadata(key, { type: 'arrayBuffer' });
+    if (hit && hit.data) return new Response(hit.data, { status: 200, headers: { 'Content-Type': hit.metadata?.type || 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' } });
+  } catch (e) { /* fall through to the live link */ }
+  // Not saved yet: try the current link from the sheet, save it, and serve it.
+  const post = (await socialCached().catch(() => ({ posts: [] }))).posts.find(p => String(p.id) === String(id));
+  if (post && post.thumb) {
+    const r = await fetch(post.thumb).catch(() => null);
+    if (r && r.ok && (r.headers.get('content-type') || '').startsWith('image/')) {
+      const buf = await r.arrayBuffer(); const type = r.headers.get('content-type');
+      try { await thumbStore().set(key, buf, { metadata: { type, savedAt: new Date().toISOString() } }); (await savedThumbKeys()).add(key); } catch (e) {}
+      return new Response(buf, { status: 200, headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=31536000, immutable' } });
+    }
+  }
+  return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+}
+
+export default async (req, context) => {
+  if (new URL(req.url).searchParams.get('action') !== 'thumb' && !authorised(req)) return json(401, { error: 'Password required.' });
   const url = new URL(req.url);
   const action = url.searchParams.get('action');
   try {
@@ -793,36 +889,11 @@ export default async (req) => {
       return json(200, await google(`https://analyticsdata.googleapis.com/v1beta/properties/${property}:batchRunReports`, { requests: body.requests }));
     }
     if (action === 'social') {
-      let id = (process.env.SOCIAL_SHEET_ID || '').trim();
-      const m = id.match(/\/d\/([a-zA-Z0-9_-]+)/); if (m) id = m[1];
-      if (!id) throw fail('The social data sheet is not connected yet. Add SOCIAL_SHEET_ID (the Google Sheet link or ID) in Netlify under Site configuration → Environment variables, then redeploy.');
-      const tab = (process.env.SOCIAL_SHEET_TAB || '').trim();
-      const fTab = (process.env.SOCIAL_FOLLOWERS_TAB || '').trim();
-      const pTab = (process.env.SOCIAL_POSTS_TAB || '').trim();
-      const rng = (name) => name ? `'${name.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
-      const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : [], pTab ? [rng(pTab)] : []);
-      const qs = ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
-      let j;
-      try {
-        j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
-      } catch (e) {
-        if (fTab && /Unable to parse range/i.test(e.message) && e.message.includes(fTab)) throw fail(`The sheet has no tab called "${fTab}". Check SOCIAL_FOLLOWERS_TAB in Netlify (it must match the tab name exactly).`, 400);
-        if (pTab && /Unable to parse range/i.test(e.message) && e.message.includes(pTab)) throw fail(`The sheet has no tab called "${pTab}". Check SOCIAL_POSTS_TAB in Netlify (it must match the tab name exactly).`, 400);
-        if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check SOCIAL_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400);
-        throw e;
-      }
-      const vr = (j.valueRanges || []).map(v => v.values || []);
-      const main = vr[0], fol = fTab ? vr[1] : null, posts = pTab ? vr[fTab ? 2 : 1] : null;
-      const out = parseSocial(main || []);
-      if (fol && fol.length) {
-        // Follower snapshots: only rows with a follower count, added without touching reach/impressions.
-        parseSocial(fol).rows.filter(r => r.followers != null)
-          .forEach(r => out.rows.push({ ...r, reach: null, impressions: null, engagements: null, newFollowers: null, snapshot: true }));
-        out.rows.sort((a, b) => a.date.localeCompare(b.date));
-      }
-      out.postsConnected = !!pTab;
-      out.posts = posts ? parsePosts(posts) : [];
-      return json(200, out);
+      const out = await socialCached();
+      return json(200, { ...out, posts: await withStoredThumbs(out.posts, context) });
+    }
+    if (action === 'thumb') {
+      return await serveThumb(url.searchParams.get('id') || '');
     }
     if (action === 'chat' && req.method === 'POST') {
       return json(200, await chatTurn(await req.json().catch(() => null)));
