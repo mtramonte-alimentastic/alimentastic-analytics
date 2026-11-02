@@ -1204,7 +1204,12 @@ const BRANDS = {
   'biogena.moments': 'BIOGENA Moments',
   'feel_food_com': 'feelfood',
   'getyourwellbeing': 'getyourwellbeing',
-  'schnauze.und.co': 'Schnauze & Co.'
+  'schnauze.und.co': 'Schnauze & Co.',
+  'beakbandits': 'Beak Bandits',
+  'beak bandits • wildvogelfutter': 'Beak Bandits',
+  'huhnglaublich.gut': 'Huhnglaublich',
+  'vitus.vitality': 'Vitus',
+  'vitus gmbh': 'Vitus'
 };
 const brandOf = (r) => BRANDS[String(r.account || '').trim().toLowerCase()] || r.account;
 const platLabel = (p) => PLATFORM[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Other');
@@ -2075,10 +2080,14 @@ const OV_BRANDS = [
     gads: ['1538152539'], meta: ['meta_890352349580726'] },
   { brand: 'Alimentastic', group: 'Alimentastic', ga: ['alimentastic'], gsc: ['alimentastic'], social: ['alimentastic_houseofbrands', 'alimentastic house of brands'], klaviyo: ['alimentastic'], shop: ['alimentastic'],
     gads: [], meta: ['meta_1677425976362685'] },
-  { brand: 'Beak Bandits', group: 'REPLOID', ga: ['beak bandits'], gsc: ['beak', 'beakbandits'], social: ['beakbandits'], klaviyo: ['beak bandits'], shop: ['beak bandits'],
+  { brand: 'Beak Bandits', group: 'REPLOID', ga: ['beak bandits'], gsc: ['beak', 'beakbandits'], social: ['beakbandits', 'beak bandits • wildvogelfutter'], klaviyo: ['beak bandits'], shop: ['beak bandits'],
     gads: ['5619576931'], meta: [] },
   { brand: 'Schnauze & Co.', group: 'REPLOID', ga: ['schnauze'], gsc: ['schnauze'], social: ['schnauze.und.co'], klaviyo: ['schnauze'], shop: ['schnauze & co.'],
     gads: [], meta: ['meta_528152425309243'] },
+  { brand: 'Huhnglaublich', group: 'REPLOID', ga: ['huhnglaublich'], gsc: ['huhnglaublich'], social: ['huhnglaublich.gut'], klaviyo: ['huhnglaublich'], shop: ['huhnglaublich'],
+    gads: [], meta: [] },
+  { brand: 'Vitus', group: 'REPLOID', ga: ['vitus'], gsc: ['vitus'], social: ['vitus.vitality', 'vitus gmbh'], klaviyo: ['vitus'], shop: ['vitus'],
+    gads: [], meta: [] },
   { brand: 'REPLOID (portfolio)', group: 'REPLOID', ga: [], gsc: [], social: [], klaviyo: [], shop: [], gads: ['9147662980'], meta: [] }
 ];
 const OV_EXCLUDE_GA = ['webstream'];
@@ -3018,7 +3027,7 @@ function bindAsk(){
 }
 
 // Show any unexpected error on screen instead of failing silently.
-const DASHBOARD_VERSION = '2026-10-27.1';
+const DASHBOARD_VERSION = '2026-10-30.1';
 function showCrash(msg){
   try {
     setStatus('');
