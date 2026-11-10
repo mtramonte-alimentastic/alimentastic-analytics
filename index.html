@@ -1209,7 +1209,12 @@ const BRANDS = {
   'beak bandits • wildvogelfutter': 'Beak Bandits',
   'huhnglaublich.gut': 'Huhnglaublich',
   'vitus.vitality': 'Vitus',
-  'vitus gmbh': 'Vitus'
+  'vitus gmbh': 'Vitus',
+  // Facebook pages
+  'feel-food.com': 'feelfood',
+  'biogena moments': 'BIOGENA Moments',
+  'alimentastic food innovation': 'Alimentastic',
+  'schnauze & co.': 'Schnauze & Co.'
 };
 const brandOf = (r) => BRANDS[String(r.account || '').trim().toLowerCase()] || r.account;
 const platLabel = (p) => PLATFORM[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Other');
@@ -2072,17 +2077,17 @@ function renderAdsTrend(){
    GA4 and Search Console match on part of the name; everything else matches exactly.
    ===================================================================== */
 const OV_BRANDS = [
-  { brand: 'feelfood', group: 'Alimentastic', ga: [], gsc: ['feel-food', 'feelfood'], social: ['feel_food_com'], klaviyo: ['feelfood'], shop: ['feelfood'],
+  { brand: 'feelfood', group: 'Alimentastic', ga: [], gsc: ['feel-food', 'feelfood'], social: ['feel_food_com', 'feel-food.com'], klaviyo: ['feelfood'], shop: ['feelfood'],
     gads: [], meta: ['meta_683751865860519'] },
-  { brand: 'Moments', group: 'Alimentastic', ga: ['moments'], gsc: ['moments'], social: ['biogena.moments'], klaviyo: ['moments', 'biogena moments'], shop: ['moments'],
+  { brand: 'Moments', group: 'Alimentastic', ga: ['moments'], gsc: ['moments'], social: ['biogena.moments', 'biogena moments'], klaviyo: ['moments', 'biogena moments'], shop: ['moments'],
     gads: [], meta: ['meta_724589327042473', 'meta_554233402990395'] },
   { brand: 'getyourwellbeing', group: 'Alimentastic', ga: ['getyourwellbeing'], gsc: ['getyourwellbeing'], social: ['getyourwellbeing'], klaviyo: ['getyourwellbeing', 'gyw'], shop: ['getyourwellbeing'],
     gads: ['1538152539'], meta: ['meta_890352349580726'] },
-  { brand: 'Alimentastic', group: 'Alimentastic', ga: ['alimentastic'], gsc: ['alimentastic'], social: ['alimentastic_houseofbrands', 'alimentastic house of brands'], klaviyo: ['alimentastic'], shop: ['alimentastic'],
+  { brand: 'Alimentastic', group: 'Alimentastic', ga: ['alimentastic'], gsc: ['alimentastic'], social: ['alimentastic_houseofbrands', 'alimentastic house of brands', 'alimentastic food innovation'], klaviyo: ['alimentastic'], shop: ['alimentastic'],
     gads: [], meta: ['meta_1677425976362685'] },
   { brand: 'Beak Bandits', group: 'REPLOID', ga: ['beak bandits'], gsc: ['beak', 'beakbandits'], social: ['beakbandits', 'beak bandits • wildvogelfutter'], klaviyo: ['beak bandits'], shop: ['beak bandits'],
     gads: ['5619576931'], meta: [] },
-  { brand: 'Schnauze & Co.', group: 'REPLOID', ga: ['schnauze'], gsc: ['schnauze'], social: ['schnauze.und.co'], klaviyo: ['schnauze'], shop: ['schnauze & co.'],
+  { brand: 'Schnauze & Co.', group: 'REPLOID', ga: ['schnauze'], gsc: ['schnauze'], social: ['schnauze.und.co', 'schnauze & co.'], klaviyo: ['schnauze'], shop: ['schnauze & co.'],
     gads: [], meta: ['meta_528152425309243'] },
   { brand: 'Huhnglaublich', group: 'REPLOID', ga: ['huhnglaublich'], gsc: ['huhnglaublich'], social: ['huhnglaublich.gut'], klaviyo: ['huhnglaublich'], shop: ['huhnglaublich'],
     gads: [], meta: [] },
@@ -2244,7 +2249,7 @@ function renderOverview(data, R, done, issues){
     tile({ label: 'Owned audience', v: ready('Social') && ready('Newsletter') ? (audience ? fNum(audience) : null) : '…', sub: `${netAud >= 0 ? '+' : ''}${fNum(netAud)} net this period`, src: 'Social', go: 'social', srcLabel: 'Followers + subscribers' })
   ].join('');
   $('ovReach').innerHTML = [
-    tile({ label: 'Social reach', v: c.reach != null ? fNum(c.reach) : null, d: dd('reach'), sub: c.engRate != null ? `Engagement rate ${fPct(c.engRate)}` : '', src: 'Social', go: 'social', srcLabel: 'Instagram + LinkedIn' }),
+    tile({ label: 'Social reach', v: c.reach != null ? fNum(c.reach) : null, d: dd('reach'), sub: c.engRate != null ? `Engagement rate ${fPct(c.engRate)}` : '', src: 'Social', go: 'social', srcLabel: 'Instagram, Facebook, LinkedIn' }),
     tile({ label: 'Email revenue', v: c.emailRevenue != null ? eur(c.emailRevenue) : null, d: dd('emailRevenue'), sub: c.sales && c.emailRevenue != null ? `${fPct(c.emailRevenue / c.sales)} of total sales` : '', src: 'Newsletter', go: 'newsletter', srcLabel: 'Klaviyo' })
   ].join('');
   $('ovNote').textContent = 'Blended ROAS and cost per new customer use real Shopify sales and new customers, not what Google or Meta report. Spend in accounts that serve several brands (REPLOID portfolio) counts in the totals but not per brand. Owned audience = latest follower counts + main newsletter list. Click a tile to open the detailed tab.';
@@ -3027,7 +3032,7 @@ function bindAsk(){
 }
 
 // Show any unexpected error on screen instead of failing silently.
-const DASHBOARD_VERSION = '2026-10-30.1';
+const DASHBOARD_VERSION = '2026-11-10.2';
 function showCrash(msg){
   try {
     setStatus('');

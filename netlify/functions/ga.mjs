@@ -107,7 +107,12 @@ const COLS = {
   li_eng: ['account_analytics_total_engagements', 'total engagements'],
   li_followers: ['organization_follower_count', 'organization follower count'],
   li_gain_org: ['followers_gain_organic', "organic growth of the organization's followers per day"],
-  li_gain_paid: ['followers_gain_paid', "paid growth of the organization's followers per day"]
+  li_gain_paid: ['followers_gain_paid', "paid growth of the organization's followers per day"],
+  fb_reach: ['page_impressions_unique', '(deprecated) page impressions unique', 'page_total_media_view_unique', 'page total media view unique'],
+  fb_impr: ['page_impressions', 'page impressions'],
+  fb_eng: ['page_post_engagements', 'page post engagements'],
+  fb_new: ['page_daily_follows_unique', 'daily follows unique'],
+  fb_followers: ['page_follows', 'lifetime total follows']
 };
 const norm = (s) => String(s ?? '').trim().toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ');
 const num = (v) => {
@@ -143,7 +148,11 @@ function parseSocial(values) {
     let src = norm(get(row, 'datasource'));
     if (!src) src = num(get(row, 'li_impr')) != null || num(get(row, 'li_followers')) != null ? 'linkedin' : 'instagram';
     const platform = src.includes('linkedin') ? 'linkedin' : src.includes('instagram') ? 'instagram' : src.includes('facebook') ? 'facebook' : src;
-    if (platform === 'linkedin') {
+    if (platform === 'facebook') {
+      rows.push({ date, platform, account,
+        reach: num(get(row, 'fb_reach')), impressions: num(get(row, 'fb_impr')), engagements: num(get(row, 'fb_eng')),
+        followers: num(get(row, 'fb_followers')), newFollowers: num(get(row, 'fb_new')) });
+    } else if (platform === 'linkedin') {
       const go = num(get(row, 'li_gain_org')), gp = num(get(row, 'li_gain_paid'));
       rows.push({ date, platform, account,
         reach: num(get(row, 'li_uimpr')), impressions: num(get(row, 'li_impr')), engagements: num(get(row, 'li_eng')),
@@ -778,20 +787,23 @@ async function readSocialSheet() {
   const tab = (process.env.SOCIAL_SHEET_TAB || '').trim();
   const fTab = (process.env.SOCIAL_FOLLOWERS_TAB || '').trim();
   const pTab = (process.env.SOCIAL_POSTS_TAB || '').trim();
+  const fbTab = (process.env.SOCIAL_FB_POSTS_TAB || '').trim();
   const rng = (name) => name ? `'${name.replace(/'/g, "''")}'!A1:Z` : 'A1:Z';
-  const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : [], pTab ? [rng(pTab)] : []);
+  const ranges = [rng(tab)].concat(fTab ? [rng(fTab)] : [], pTab ? [rng(pTab)] : [], fbTab ? [rng(fbTab)] : []);
   const qs = ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
   let j;
   try {
     j = await google(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`);
   } catch (e) {
     if (fTab && /Unable to parse range/i.test(e.message) && e.message.includes(fTab)) throw fail(`The sheet has no tab called "${fTab}". Check SOCIAL_FOLLOWERS_TAB in Netlify (it must match the tab name exactly).`, 400);
+    if (fbTab && /Unable to parse range/i.test(e.message) && e.message.includes(fbTab)) throw fail(`The sheet has no tab called "${fbTab}". Check SOCIAL_FB_POSTS_TAB in Netlify (it must match the tab name exactly).`, 400);
     if (pTab && /Unable to parse range/i.test(e.message) && e.message.includes(pTab)) throw fail(`The sheet has no tab called "${pTab}". Check SOCIAL_POSTS_TAB in Netlify (it must match the tab name exactly).`, 400);
     if (/Unable to parse range/i.test(e.message)) throw fail(`The sheet has no tab called "${tab}". Check SOCIAL_SHEET_TAB in Netlify (it must match the tab name exactly).`, 400);
     throw e;
   }
   const vr = (j.valueRanges || []).map(v => v.values || []);
-  const main = vr[0], fol = fTab ? vr[1] : null, posts = pTab ? vr[fTab ? 2 : 1] : null;
+  let k = 1;
+  const main = vr[0], fol = fTab ? vr[k++] : null, posts = pTab ? vr[k++] : null, fbPosts = fbTab ? vr[k++] : null;
   const out = parseSocial(main || []);
   if (fol && fol.length) {
     // Follower snapshots: only rows with a follower count, added without touching reach/impressions.
@@ -799,8 +811,8 @@ async function readSocialSheet() {
       .forEach(r => out.rows.push({ ...r, reach: null, impressions: null, engagements: null, newFollowers: null, snapshot: true }));
     out.rows.sort((a, b) => a.date.localeCompare(b.date));
   }
-  out.postsConnected = !!pTab;
-  out.posts = posts ? parsePosts(posts) : [];
+  out.postsConnected = !!(pTab || fbTab);
+  out.posts = (posts ? parsePosts(posts) : []).concat(fbPosts ? parseFbPosts(fbPosts) : []).sort((a, b) => b.published.localeCompare(a.published));
   return out;
 }
 
@@ -863,6 +875,34 @@ async function serveThumb(id) {
     }
   }
   return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+}
+
+// ---------- Facebook page posts (own Windsor export / sheet tab) ----------
+const FCOLS = {
+  date: ['date'], account: ['account_name', 'account name'], post_id: ['post_id', 'post id'], message: ['post_message', 'post message'],
+  url: ['permalink_url', 'post permalink url'], created: ['post_created_time', 'post created time'],
+  impr: ['post_impressions', 'post impressions'], reach: ['post_total_media_view_unique', 'post total media view unique', 'post_impressions_unique', '(deprecated) post impressions unique'],
+  eng: ['post_engagements', 'post engagements'], picture: ['full_picture', 'post full picture', 'post_picture', 'post picture', 'picture', 'video thumbnail picture']
+};
+function parseFbPosts(values) {
+  if (!values || !values.length) return [];
+  const head = values[0].map(norm), idx = {};
+  for (const [k, names] of Object.entries(FCOLS)) { idx[k] = -1; for (const n of names) { const i = head.indexOf(n); if (i >= 0) { idx[k] = i; break; } } }
+  const get = (row, k) => idx[k] >= 0 ? row[idx[k]] : null;
+  const m = new Map();
+  for (const row of values.slice(1)) {
+    const id = String(get(row, 'post_id') ?? '').trim();
+    if (!id || id.toLowerCase() === 'null') continue;
+    const p = m.get(id) || { id: 'fb_' + id, platform: 'facebook', account: String(get(row, 'account') ?? '').trim(), published: null, text: '', url: null, type: 'post', thumb: null, reach: 0, impressions: 0, engagements: 0 };
+    p.published = p.published || toIsoAny(get(row, 'created')) || toIsoDate(get(row, 'date'));
+    const msg = String(get(row, 'message') ?? '').replace(/\s+/g, ' ').trim(); if (msg && msg.toLowerCase() !== 'null') p.text = msg;
+    const u = String(get(row, 'url') ?? '').trim(); if (/^https?:\/\//.test(u)) p.url = u;
+    const pic = String(get(row, 'picture') ?? '').trim(); if (/^https?:\/\//.test(pic)) p.thumb = pic;
+    // Post figures are lifetime totals that may repeat across export days: keep the highest value seen.
+    p.reach = Math.max(p.reach, num(get(row, 'reach')) || 0); p.impressions = Math.max(p.impressions, num(get(row, 'impr')) || 0); p.engagements = Math.max(p.engagements, num(get(row, 'eng')) || 0);
+    m.set(id, p);
+  }
+  return [...m.values()].filter(p => p.published);
 }
 
 export default async (req, context) => {
