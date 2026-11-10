@@ -42,7 +42,7 @@ Google Ads API mode also exists in code (used only if `ADS_SHEET_TAB` and `META_
 - Social sheet: `SOCIAL_SHEET_ID`, `SOCIAL_SHEET_TAB` (=social), `SOCIAL_FOLLOWERS_TAB` (=followers), `SOCIAL_POSTS_TAB` (=posts), `SOCIAL_FB_POSTS_TAB` (=fb_posts).
 - Paid media: `ADS_SHEET_TAB` (=ads), `META_SHEET_TAB` (=meta); same spreadsheet as `SOCIAL_SHEET_ID` unless `ADS_SHEET_ID` is set.
 - Klaviyo: `KLAVIYO_ACCOUNTS` — `Brand: pk_…` pairs; any separator works (Netlify collapses line breaks).
-- Shopify: `SHOPIFY_STORES` — `Brand: store.myshopify.com | CLIENT_ID | CLIENT_SECRET`, stores separated by `;`. Currently Schnauze & Co., Feelfood, Beak Bandits.
+- Shopify: `SHOPIFY_STORES` — `Brand: store.myshopify.com | CLIENT_ID | CLIENT_SECRET`, stores separated by `;`. Currently Schnauze & Co., Feelfood, Beak Bandits, Moments (biogena-moments), VIFON.
 - Assistant: `ANTHROPIC_API_KEY` (optional `ANTHROPIC_MODEL`).
 - Optional: `DASHBOARD_PASSWORD` (page asks for it; sent as `x-dashboard-key`; the `thumb` action is exempt because <img> tags can't send headers).
 Variables only apply after a new deploy.
@@ -70,7 +70,7 @@ Connected accounts (Windsor): Instagram — biogena.moments, schnauze.und.co, ge
 Two lists in `index.html`:
 - `BRANDS` (Social tab): handle → display name.
 - `OV_BRANDS` (Overview + assistant): per brand, its group (Alimentastic / REPLOID) and the matching names/IDs per source (`ga`, `gsc` match by substring; `social`, `klaviyo`, `shop` exact, case-insensitive; `gads` account IDs; `meta` IDs prefixed `meta_`). Unmatched data shows as "Unassigned". `OV_EXCLUDE_GA` drops the "Webstream" GA4 property.
-Groups: Alimentastic — feelfood, Moments (incl. Functional coffee), getyourwellbeing (marketing funded by BIOGENA), Alimentastic corporate. REPLOID — Beak Bandits, Schnauze & Co., Huhnglaublich, Vitus, plus "REPLOID (portfolio)" for the multi-area REPLOID Group Google Ads account.
+Groups: Alimentastic — feelfood, Moments (incl. Functional coffee), getyourwellbeing (marketing funded by BIOGENA), VIFON, Alimentastic corporate. REPLOID — Beak Bandits, Schnauze & Co., Huhnglaublich, Vitus, plus "REPLOID (portfolio)" for the multi-area REPLOID Group Google Ads account.
 
 ## Gotchas (already solved — don't reintroduce)
 - Ad blockers hide elements whose ids/classes contain "ads": Paid media uses `pm…` ids and `pm_…` actions.
