@@ -50,7 +50,7 @@ Variables only apply after a new deploy.
 ## Windsor.ai exports (Google Sheet `dashboard_social`, all daily)
 | Task | Tab | Notes |
 |---|---|---|
-| dashboard_social | social | Instagram account reach/views/interactions, Facebook page reach/impressions/engagements/follows, LinkedIn page stats. last_30d + 1-year backfill. Match `date,datasource,account_name`. |
+| dashboard_social | social | Instagram account reach/views/interactions, Facebook page ORGANIC reach/impressions (page_impressions_organic_unique, page_impressions_organic — the all-in page metrics include ads) plus engagements/follows, LinkedIn page stats. last_30d + 1-year backfill. Match `date,datasource,account_name`. |
 | dashboard_followers | followers | Instagram `followers_count` only for today (`date_preset=last_1dT`). Columns to Match empty (appends history). |
 | dashboard_posts | posts | Instagram media + LinkedIn shares incl. `media_url`, `media_thumbnail_url`. Columns to Match `date,media_id,share_id`. |
 | dashboard_fb_posts | fb_posts | Facebook page posts (post_id, message, permalink, created time, impressions, post_total_media_view_unique as reach, engagements, full_picture — set via the Connector URL, the editor hides some fields). Match `date,post_id`. |

@@ -108,8 +108,9 @@ const COLS = {
   li_followers: ['organization_follower_count', 'organization follower count'],
   li_gain_org: ['followers_gain_organic', "organic growth of the organization's followers per day"],
   li_gain_paid: ['followers_gain_paid', "paid growth of the organization's followers per day"],
-  fb_reach: ['page_impressions_unique', '(deprecated) page impressions unique', 'page_total_media_view_unique', 'page total media view unique'],
-  fb_impr: ['page_impressions', 'page impressions'],
+  // Organic-only page metrics come first; the all-in versions (which include ads) are only a fallback.
+  fb_reach: ['page_impressions_organic_unique', '(deprecated) page impressions organic unique', 'page_impressions_organic_unique_v2', 'page_impressions_unique', '(deprecated) page impressions unique', 'page_total_media_view_unique', 'page total media view unique'],
+  fb_impr: ['page_impressions_organic', 'page impressions organic', 'page_impressions_organic_v2', '(deprecated) page impressions organic', 'page_impressions', 'page impressions'],
   fb_eng: ['page_post_engagements', 'page post engagements'],
   fb_new: ['page_daily_follows_unique', 'daily follows unique'],
   fb_followers: ['page_follows', 'lifetime total follows']
